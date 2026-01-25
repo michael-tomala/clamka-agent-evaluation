@@ -1,0 +1,25 @@
+{
+  "name": "clamka-testing-api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "npx ts-node --transpile-only --project tsconfig.json server.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "uuid": "^9.0.1",
+    "fastify": "^4.28.0",
+    "@fastify/cors": "^9.0.1",
+    "@fastify/websocket": "^10.0.1",
+    "bullmq": "^5.12.0",
+    "ioredis": "^5.4.0",
+    "pino-pretty": "^11.2.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20.10.0",
+    "@types/uuid": "^9.0.7",
+    "typescript": "^5.3.3",
+    "ts-node": "^10.9.2"
+  }
+}

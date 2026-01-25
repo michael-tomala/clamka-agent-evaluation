@@ -1,0 +1,248 @@
+/**
+ * Tools Routes - API endpoint dla listy narzędzi MCP
+ */
+
+import { FastifyInstance, FastifyPluginOptions } from 'fastify';
+import fs from 'fs';
+import path from 'path';
+import { z } from 'zod';
+import { getAllTools } from '../../../electron/services/mcp/tools/all-tools';
+import { zodSchemaToParams } from '../../../electron/services/mcp/tools/utils/zodToParams';
+import {
+  MONTAGE_ALLOWED_TOOLS,
+  SCRIPT_ALLOWED_TOOLS,
+} from '../../../shared/prompts/agents/allowed-tools';
+import type { McpServerContext } from '../../../electron/services/mcp/types';
+import type { ToolParameter } from '../../../shared/types/agentPrompt';
+
+// Ścieżka do głównego katalogu projektu
+const PROJECT_ROOT = path.resolve(__dirname, '../../..');
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+interface ToolInfo {
+  name: string;
+  description: string;
+  category: string;
+  enabledByDefault: boolean;
+  parameters: ToolParameter[];
+}
+
+interface ToolsResponse {
+  tools: ToolInfo[];
+  allowedForAgent: string[];
+}
+
+interface AgentPromptResponse {
+  agent: string;
+  prompt: string;
+  source: string;
+}
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+
+/**
+ * Wyciąga kategorię z nazwy narzędzia (np. createChapters -> chapters)
+ */
+function getCategoryFromToolName(name: string): string {
+  const categoryMap: Record<string, string> = {
+    // Chapters
+    listChapters: 'chapters',
+    createChapters: 'chapters',
+    updateChapter: 'chapters',
+    deleteChapters: 'chapters',
+
+    // Timelines
+    listChapterTimelinesSimplifiedBlocks: 'timelines',
+    getTimelineSettings: 'timelines',
+    updateTimeline: 'timelines',
+    createTimelines: 'timelines',
+
+    // Blocks
+    getBlockSettings: 'blocks',
+    getSettingsSchema: 'blocks',
+    splitBlock: 'blocks',
+    removeBlocks: 'blocks',
+    moveBlocks: 'blocks',
+    trimBlock: 'blocks',
+    createBlocksFromAssets: 'blocks',
+    updateBlockSchemaSettings: 'blocks',
+    getBlocksFocusPoints: 'blocks',
+    getBlockTranscriptionSegments: 'blocks',
+
+    // Script Segments
+    listScriptSegments: 'script-segments',
+    createScriptSegments: 'script-segments',
+    updateScriptSegment: 'script-segments',
+    deleteScriptSegment: 'script-segments',
+    getProjectNarrative: 'script-segments',
+
+    // Media Assets
+    listMediaAssets: 'media-assets',
+    getMediaAsset: 'media-assets',
+    getMediaAssetsTranscriptions: 'media-assets',
+    getMediaAssetsFocusPoints: 'media-assets',
+
+    // Semantic Search
+    searchScenes: 'semantic-search',
+
+    // Persons
+    listPersons: 'persons',
+    findAssetsByPerson: 'persons',
+    getPersonsOnAsset: 'persons',
+    getPersonPresence: 'persons',
+
+    // Compositions
+    listCompositions: 'compositions',
+    getComposition: 'compositions',
+
+    // Render
+    renderChapterFrame: 'render',
+    renderChapterAudio: 'render',
+    renderAssetFrame: 'render',
+
+    // Download
+    downloadMedia: 'download',
+    downloadYouTube: 'download',
+
+    // Gemini Image
+    generateImage: 'ai-image',
+    editImage: 'ai-image',
+
+    // Trans Agent
+    runTransAgent: 'trans-agent',
+  };
+
+  return categoryMap[name] || 'other';
+}
+
+/**
+ * Pobiera listę narzędzi MCP z ich opisami i parametrami
+ */
+function getToolsList(): ToolInfo[] {
+  // Tworzymy mock tool function żeby wyekstrahować definicje narzędzi
+  const toolDefinitions: Array<{
+    name: string;
+    description: string;
+    schema: Record<string, z.ZodTypeAny>;
+  }> = [];
+
+  const mockTool = (
+    name: string,
+    description: string,
+    schema: Record<string, z.ZodTypeAny>,
+    _handler: unknown
+  ) => {
+    toolDefinitions.push({ name, description, schema });
+    return { name, description, inputSchema: schema, handler: () => {} };
+  };
+
+  // Tworzymy mock context
+  const mockContext: McpServerContext = {
+    projectId: 'mock-project',
+    chapterId: 'mock-chapter',
+  };
+
+  // Wywołaj getAllTools z mock'ami - zbierze definicje wszystkich narzędzi
+  getAllTools(mockTool, mockContext);
+
+  // Mapuj na ToolInfo z kategorią i parametrami
+  return toolDefinitions.map((def) => ({
+    name: def.name,
+    description: def.description,
+    category: getCategoryFromToolName(def.name),
+    enabledByDefault: true,
+    parameters: zodSchemaToParams(def.schema),
+  }));
+}
+
+/**
+ * Pobiera listę dozwolonych narzędzi dla agenta (bez prefiksu mcp__clamka-mcp__)
+ */
+function getAllowedToolsForAgent(agent: string): string[] {
+  const allowedWithPrefix =
+    agent === 'montage' ? MONTAGE_ALLOWED_TOOLS : SCRIPT_ALLOWED_TOOLS;
+
+  return allowedWithPrefix
+    .filter((t) => t.startsWith('mcp__clamka-mcp__'))
+    .map((t) => t.replace('mcp__clamka-mcp__', ''));
+}
+
+/**
+ * Pobiera prompt agenta z pliku .md
+ */
+function getAgentPrompt(agent: string): AgentPromptResponse | null {
+  const validAgents = ['montage', 'script'];
+  if (!validAgents.includes(agent)) {
+    return null;
+  }
+
+  const promptPath = `shared/prompts/agents/${agent}.md`;
+  const fullPath = path.join(PROJECT_ROOT, promptPath);
+
+  if (!fs.existsSync(fullPath)) {
+    return null;
+  }
+
+  const prompt = fs.readFileSync(fullPath, 'utf-8');
+  return {
+    agent,
+    prompt,
+    source: promptPath,
+  };
+}
+
+// ============================================================================
+// ROUTES
+// ============================================================================
+
+export default async function toolsRoutes(
+  fastify: FastifyInstance,
+  _opts: FastifyPluginOptions
+): Promise<void> {
+  /**
+   * GET /api/tools - lista wszystkich narzędzi MCP
+   *
+   * Query params:
+   * - agent: 'montage' | 'script' - filtruj narzędzia dozwolone dla agenta
+   */
+  fastify.get<{ Querystring: { agent?: string } }>('/tools', async (request, reply) => {
+    const { agent } = request.query;
+
+    const allTools = getToolsList();
+    const allowedForAgent = agent ? getAllowedToolsForAgent(agent) : [];
+
+    // Jeśli podano agenta, zaznacz które narzędzia są włączone
+    const tools = allTools.map((tool) => ({
+      ...tool,
+      enabledByDefault: agent ? allowedForAgent.includes(tool.name) : true,
+    }));
+
+    const response: ToolsResponse = {
+      tools,
+      allowedForAgent,
+    };
+
+    return reply.send(response);
+  });
+
+  /**
+   * GET /api/prompts/:agent - domyślny prompt agenta
+   *
+   * Zwraca zawartość pliku .md z promptem systemowym dla agenta.
+   */
+  fastify.get<{ Params: { agent: string } }>('/prompts/:agent', async (request, reply) => {
+    const { agent } = request.params;
+    const promptData = getAgentPrompt(agent);
+
+    if (!promptData) {
+      return reply.status(404).send({ error: `Prompt for agent '${agent}' not found` });
+    }
+
+    return reply.send(promptData);
+  });
+}
