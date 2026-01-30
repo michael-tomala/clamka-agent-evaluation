@@ -124,6 +124,13 @@ export class JsonEnrichmentStorage implements IEnrichmentStorage {
     return this.transcriptionSegments.get(id);
   }
 
+  getTranscriptionByIds(ids: string[]): MediaAssetTranscriptionSegment[] {
+    return ids
+      .map((id) => this.transcriptionSegments.get(id))
+      .filter((seg): seg is MediaAssetTranscriptionSegment => seg !== undefined)
+      .sort((a, b) => a.fileRelativeStartFrame - b.fileRelativeStartFrame);
+  }
+
   getTranscriptionByAssetId(assetId: string): MediaAssetTranscriptionSegment[] {
     return Array.from(this.transcriptionSegments.values())
       .filter((ts) => ts.assetId === assetId)
@@ -202,6 +209,33 @@ export class JsonEnrichmentStorage implements IEnrichmentStorage {
         orderIndex: segment.orderIndex ?? index,
       })
     );
+  }
+
+  /**
+   * Atomowa zamiana transkrypcji z zachowaniem oryginalnych ID.
+   * Używane przez fixtures loader - NIE generuje nowych UUID.
+   * Pozwala na poprawne dopasowanie segmentów z LanceDB embeddings.
+   */
+  replaceTranscriptionForAssetWithIds(
+    assetId: string,
+    segments: MediaAssetTranscriptionSegment[]
+  ): MediaAssetTranscriptionSegment[] {
+    // Usuń istniejące dla tego assetu
+    for (const [id, ts] of this.transcriptionSegments.entries()) {
+      if (ts.assetId === assetId) {
+        this.transcriptionSegments.delete(id);
+      }
+    }
+
+    // Dodaj z zachowaniem oryginalnych ID
+    for (const segment of segments) {
+      this.transcriptionSegments.set(segment.id, {
+        ...segment,
+        assetId, // upewnij się że assetId jest poprawne
+      });
+    }
+
+    return segments;
   }
 
   updateTranscriptionSegmentPerson(segmentId: string, personId: string | null): void {

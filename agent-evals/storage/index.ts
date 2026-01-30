@@ -12,3 +12,4 @@ export * from './json-settings-storage';
 export * from './json-person-storage';
 export * from './json-agent-prompt-storage';
 export * from './json-dynamic-composition-storage';
+export * from './test-vector-store';

@@ -9,9 +9,84 @@ import { FastifyInstance, FastifyPluginOptions } from 'fastify';
 import path from 'path';
 import fs from 'fs';
 import Database from 'better-sqlite3';
+import type { Connection } from '@lancedb/lancedb';
 
 // Ścieżka do fixtures.db
 const FIXTURES_DB_PATH = path.resolve(__dirname, '../../agent-evals/fixtures/clamka.db');
+
+// Ścieżka do LanceDB fixtures
+const LANCEDB_FIXTURES_PATH = path.resolve(__dirname, '../../agent-evals/fixtures/lancedb');
+
+// Tabele LanceDB z metadanymi
+const LANCEDB_TABLES_CONFIG = {
+  scene_embeddings: {
+    displayName: 'Scene Embeddings',
+    columns: ['id', 'projectId'],
+  },
+  project_contexts: {
+    displayName: 'Project Contexts',
+    columns: ['id', 'projectId', 'projectSettings', 'chunkIndex', 'text'],
+  },
+  transcription_embeddings: {
+    displayName: 'Transcription Embeddings',
+    columns: ['id', 'projectId', 'assetId', 'chunkIndex', 'text', 'segmentIds'],
+  },
+} as const;
+
+// ============================================================================
+// EMBEDDING SERVICE (dla semantic search)
+// ============================================================================
+
+type FeatureExtractionPipeline = (
+  text: string | string[],
+  options?: { pooling?: string; normalize?: boolean }
+) => Promise<{ data: Float32Array }>;
+
+let embeddingPipeline: FeatureExtractionPipeline | null = null;
+let embeddingInitPromise: Promise<void> | null = null;
+
+async function getEmbedding(text: string): Promise<number[]> {
+  if (!embeddingPipeline) {
+    if (!embeddingInitPromise) {
+      embeddingInitPromise = (async () => {
+        console.log('[Fixtures] Initializing embedding model...');
+
+        // Ustaw katalog cache dla modelu (w katalogu projektu)
+        const cacheDir = path.resolve(__dirname, '../../../transformers-cache');
+        process.env.TRANSFORMERS_CACHE = cacheDir;
+
+        // Dynamiczny import @xenova/transformers (ESM module)
+        const importFunc = new Function('modulePath', 'return import(modulePath)');
+        const { pipeline, env } = await importFunc('@xenova/transformers');
+
+        env.cacheDir = cacheDir;
+        env.allowLocalModels = true;
+        env.useBrowserCache = false;
+
+        embeddingPipeline = (await pipeline(
+          'feature-extraction',
+          'Xenova/all-MiniLM-L6-v2',
+          { quantized: true }
+        )) as FeatureExtractionPipeline;
+
+        console.log('[Fixtures] Embedding model initialized');
+      })();
+    }
+    await embeddingInitPromise;
+  }
+
+  if (!embeddingPipeline) {
+    throw new Error('Embedding pipeline not initialized');
+  }
+
+  const output = await embeddingPipeline(text, {
+    pooling: 'mean',
+    normalize: true,
+  });
+
+  // WAŻNE: zwracamy number[] zamiast Float32Array dla prawidłowej serializacji LanceDB
+  return Array.from(new Float32Array(output.data));
+}
 
 // ============================================================================
 // TYPES
@@ -65,6 +140,43 @@ interface MediaAssetSummary {
   orderIndex: number | null;
 }
 
+// LanceDB types
+interface LanceDbStatus {
+  exists: boolean;
+  path: string;
+  tables: string[];
+}
+
+interface LanceDbProjectCount {
+  projectId: string;
+  count: number;
+}
+
+interface LanceDbTableStats {
+  tableName: string;
+  displayName: string;
+  totalCount: number;
+  byProject: LanceDbProjectCount[];
+}
+
+interface LanceDbSampleRecord {
+  [key: string]: string | number | null;
+}
+
+interface LanceDbSearchResult {
+  id: string;
+  projectId: string;
+  text?: string;
+  score: number;
+  distance: number;
+}
+
+interface LanceDbSearchRequest {
+  query: string;
+  projectId?: string;
+  limit?: number;
+}
+
 // ============================================================================
 // HELPERS
 // ============================================================================
@@ -74,6 +186,39 @@ function checkFixturesDb(): { exists: boolean; path: string } {
     exists: fs.existsSync(FIXTURES_DB_PATH),
     path: FIXTURES_DB_PATH,
   };
+}
+
+function checkLanceDb(): { exists: boolean; path: string } {
+  return {
+    exists: fs.existsSync(LANCEDB_FIXTURES_PATH),
+    path: LANCEDB_FIXTURES_PATH,
+  };
+}
+
+// Cache dla połączenia LanceDB (read-only)
+let lanceDbConnection: Connection | null = null;
+
+async function getLanceDbConnection(): Promise<Connection | null> {
+  const status = checkLanceDb();
+  if (!status.exists) {
+    return null;
+  }
+
+  if (!lanceDbConnection) {
+    const lancedb = await import('@lancedb/lancedb');
+    lanceDbConnection = await lancedb.connect(LANCEDB_FIXTURES_PATH);
+  }
+
+  return lanceDbConnection;
+}
+
+/**
+ * Truncate text do określonej długości
+ */
+function truncateText(text: string | null | undefined, maxLength: number): string | null {
+  if (!text) return null;
+  if (text.length <= maxLength) return text;
+  return text.substring(0, maxLength) + '...';
 }
 
 // ============================================================================
@@ -395,6 +540,273 @@ export default async function fixturesRoutes(
         });
       } finally {
         db.close();
+      }
+    }
+  );
+
+  // ============================================================================
+  // LANCEDB ENDPOINTS
+  // ============================================================================
+
+  /**
+   * GET /api/fixtures/lancedb/status - sprawdź status LanceDB fixtures
+   */
+  fastify.get('/fixtures/lancedb/status', async (_request, reply) => {
+    const status = checkLanceDb();
+
+    if (!status.exists) {
+      return reply.send({
+        exists: false,
+        path: status.path,
+        tables: [],
+      } satisfies LanceDbStatus);
+    }
+
+    try {
+      const db = await getLanceDbConnection();
+      if (!db) {
+        return reply.send({
+          exists: false,
+          path: status.path,
+          tables: [],
+        } satisfies LanceDbStatus);
+      }
+
+      const tableNames = await db.tableNames();
+
+      return reply.send({
+        exists: true,
+        path: status.path,
+        tables: tableNames,
+      } satisfies LanceDbStatus);
+    } catch (error) {
+      console.error('[LanceDB] Error getting status:', error);
+      return reply.status(500).send({
+        error: 'Failed to connect to LanceDB',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
+  /**
+   * GET /api/fixtures/lancedb/tables/:tableName/stats - statystyki tabeli
+   */
+  fastify.get<{ Params: { tableName: string } }>(
+    '/fixtures/lancedb/tables/:tableName/stats',
+    async (request, reply) => {
+      const { tableName } = request.params;
+
+      const tableConfig = LANCEDB_TABLES_CONFIG[tableName as keyof typeof LANCEDB_TABLES_CONFIG];
+      if (!tableConfig) {
+        return reply.status(404).send({
+          error: `Unknown table: ${tableName}`,
+          availableTables: Object.keys(LANCEDB_TABLES_CONFIG),
+        });
+      }
+
+      try {
+        const db = await getLanceDbConnection();
+        if (!db) {
+          return reply.status(404).send({ error: 'LanceDB not available' });
+        }
+
+        const tableNames = await db.tableNames();
+        if (!tableNames.includes(tableName)) {
+          return reply.send({
+            tableName,
+            displayName: tableConfig.displayName,
+            totalCount: 0,
+            byProject: [],
+          } satisfies LanceDbTableStats);
+        }
+
+        const table = await db.openTable(tableName);
+        const allRows = await table.query().toArray();
+
+        // Grupuj po projectId
+        const projectCounts = new Map<string, number>();
+        for (const row of allRows) {
+          const projectId = (row as { projectId?: string }).projectId || 'unknown';
+          projectCounts.set(projectId, (projectCounts.get(projectId) || 0) + 1);
+        }
+
+        const byProject: LanceDbProjectCount[] = Array.from(projectCounts.entries())
+          .map(([projectId, count]) => ({ projectId, count }))
+          .sort((a, b) => b.count - a.count);
+
+        return reply.send({
+          tableName,
+          displayName: tableConfig.displayName,
+          totalCount: allRows.length,
+          byProject,
+        } satisfies LanceDbTableStats);
+      } catch (error) {
+        console.error(`[LanceDB] Error getting stats for ${tableName}:`, error);
+        return reply.status(500).send({
+          error: 'Failed to get table stats',
+          details: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+  );
+
+  /**
+   * GET /api/fixtures/lancedb/tables/:tableName/sample - sample rekordów z tabeli
+   */
+  fastify.get<{
+    Params: { tableName: string };
+    Querystring: { limit?: string; projectId?: string };
+  }>(
+    '/fixtures/lancedb/tables/:tableName/sample',
+    async (request, reply) => {
+      const { tableName } = request.params;
+      const limit = Math.min(parseInt(request.query.limit || '10', 10), 100);
+      const { projectId } = request.query;
+
+      const tableConfig = LANCEDB_TABLES_CONFIG[tableName as keyof typeof LANCEDB_TABLES_CONFIG];
+      if (!tableConfig) {
+        return reply.status(404).send({
+          error: `Unknown table: ${tableName}`,
+          availableTables: Object.keys(LANCEDB_TABLES_CONFIG),
+        });
+      }
+
+      try {
+        const db = await getLanceDbConnection();
+        if (!db) {
+          return reply.status(404).send({ error: 'LanceDB not available' });
+        }
+
+        const tableNames = await db.tableNames();
+        if (!tableNames.includes(tableName)) {
+          return reply.send([]);
+        }
+
+        const table = await db.openTable(tableName);
+
+        let query = table.query();
+        if (projectId) {
+          query = query.where(`"projectId" = '${projectId}'`);
+        }
+
+        const rows = await query.limit(limit).toArray();
+
+        // Mapuj rekordy - usuń embedding, truncate text
+        const mappedRows: LanceDbSampleRecord[] = rows.map((row) => {
+          const record: LanceDbSampleRecord = {};
+
+          for (const col of tableConfig.columns) {
+            const value = (row as Record<string, unknown>)[col];
+
+            if (col === 'text' && typeof value === 'string') {
+              record[col] = truncateText(value, 200);
+            } else if (col === 'segmentIds' && typeof value === 'string') {
+              // Parse JSON array i pokaż liczbę elementów
+              try {
+                const parsed = JSON.parse(value);
+                record[col] = Array.isArray(parsed) ? `[${parsed.length} segments]` : value;
+              } catch {
+                record[col] = value;
+              }
+            } else if (col === 'id' && typeof value === 'string' && value.length > 8) {
+              // Skróć ID
+              record[col] = value.substring(0, 8) + '...';
+            } else {
+              record[col] = value as string | number | null;
+            }
+          }
+
+          return record;
+        });
+
+        return reply.send(mappedRows);
+      } catch (error) {
+        console.error(`[LanceDB] Error getting sample for ${tableName}:`, error);
+        return reply.status(500).send({
+          error: 'Failed to get table sample',
+          details: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+  );
+
+  /**
+   * POST /api/fixtures/lancedb/tables/:tableName/search - wyszukiwanie semantyczne
+   */
+  fastify.post<{
+    Params: { tableName: string };
+    Body: LanceDbSearchRequest;
+  }>(
+    '/fixtures/lancedb/tables/:tableName/search',
+    async (request, reply) => {
+      const { tableName } = request.params;
+      const { query, projectId, limit = 10 } = request.body;
+
+      if (!query || typeof query !== 'string' || query.trim().length === 0) {
+        return reply.status(400).send({ error: 'Query is required' });
+      }
+
+      const tableConfig = LANCEDB_TABLES_CONFIG[tableName as keyof typeof LANCEDB_TABLES_CONFIG];
+      if (!tableConfig) {
+        return reply.status(404).send({
+          error: `Unknown table: ${tableName}`,
+          availableTables: Object.keys(LANCEDB_TABLES_CONFIG),
+        });
+      }
+
+      try {
+        const db = await getLanceDbConnection();
+        if (!db) {
+          return reply.status(404).send({ error: 'LanceDB not available' });
+        }
+
+        const tableNames = await db.tableNames();
+        if (!tableNames.includes(tableName)) {
+          return reply.send({ results: [] });
+        }
+
+        // Wygeneruj embedding dla zapytania
+        console.log(`[LanceDB] Generating embedding for query: "${query.substring(0, 50)}..."`);
+        const queryEmbedding = await getEmbedding(query);
+
+        // Otwórz tabelę i wykonaj vector search
+        const table = await db.openTable(tableName);
+
+        let searchQuery = table.vectorSearch(queryEmbedding).column('embedding');
+
+        // Filtruj po projectId jeśli podano
+        if (projectId) {
+          searchQuery = searchQuery.where(`"projectId" = '${projectId}'`);
+        }
+
+        const rows = await searchQuery.limit(Math.min(limit, 50)).toArray();
+
+        // Mapuj wyniki
+        const results: LanceDbSearchResult[] = rows.map((row) => {
+          const record = row as Record<string, unknown>;
+          const distance = (record._distance as number) || 0;
+          // Konwersja distance → score (im mniejszy distance, tym lepszy match)
+          // Dla cosine distance: score = 1 - distance/2 (normalizuje do [0,1])
+          const score = Math.max(0, 1 - distance / 2);
+
+          return {
+            id: (record.id as string) || '',
+            projectId: (record.projectId as string) || '',
+            text: truncateText(record.text as string | null | undefined, 300) || undefined,
+            score: parseFloat(score.toFixed(3)),
+            distance: parseFloat(distance.toFixed(4)),
+          };
+        });
+
+        console.log(`[LanceDB] Search completed: ${results.length} results for table ${tableName}`);
+
+        return reply.send({ results });
+      } catch (error) {
+        console.error(`[LanceDB] Error searching ${tableName}:`, error);
+        return reply.status(500).send({
+          error: 'Search failed',
+          details: error instanceof Error ? error.message : 'Unknown error',
+        });
       }
     }
   );

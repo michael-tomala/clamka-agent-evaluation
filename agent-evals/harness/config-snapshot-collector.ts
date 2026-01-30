@@ -294,8 +294,8 @@ export class ConfigSnapshotCollector {
         mediaType: a.mediaType,
         fileName: a.fileName,
         metadata: {
-          durationInFrames: a.metadata?.durationInFrames,
-          fps: a.metadata?.fps,
+          sourceDurationInFrames: a.metadata?.sourceDurationInFrames,
+          sourceFps: a.metadata?.sourceFps,
           width: a.metadata?.width,
           height: a.metadata?.height,
         },

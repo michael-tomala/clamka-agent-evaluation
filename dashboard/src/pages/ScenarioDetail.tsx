@@ -25,7 +25,7 @@ import {
   ExpandLess as ExpandLessIcon,
 } from '@mui/icons-material';
 import { api, subscribeToSuite, SuiteEvent, TestResult, RawMessage, ToolCall } from '../api/client';
-import { ScenarioMessagesView, ToolCallsDetailView, ScenarioFixturesSection } from '../components';
+import { ScenarioMessagesView, ToolCallsDetailView, ScenarioFixturesSection, RenderChapterSection } from '../components';
 
 type ScenarioStatus = 'pending' | 'running' | 'completed' | 'failed';
 
@@ -311,6 +311,32 @@ export default function ScenarioDetail() {
         </Alert>
       )}
 
+      {/* Stderr Logs z Claude CLI */}
+      {scenario?.stderrLogs && scenario.stderrLogs.length > 0 && (
+        <Paper sx={{ p: 2, mb: 3 }}>
+          <Stack direction="row" alignItems="center" spacing={1} mb={1}>
+            <Typography variant="subtitle2">Claude CLI Stderr Logs:</Typography>
+            <Chip label={`${scenario.stderrLogs.length} wpisów`} size="small" />
+          </Stack>
+          <Box
+            sx={{
+              maxHeight: 300,
+              overflow: 'auto',
+              fontFamily: 'monospace',
+              fontSize: 11,
+              p: 1.5,
+              backgroundColor: 'grey.900',
+              color: 'warning.light',
+              borderRadius: 1,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+            }}
+          >
+            {scenario.stderrLogs.join('\n')}
+          </Box>
+        </Paper>
+      )}
+
       {/* System Prompt - przetworzony dla tego scenariusza */}
       {scenario?.systemPromptInfo && (
         <Paper sx={{ p: 2, mb: 3 }}>
@@ -355,6 +381,16 @@ export default function ScenarioDetail() {
           projectId={scenario.inputContext.projectId}
           chapterId={scenario.inputContext.chapterId}
           dataDiff={scenario?.dataDiff}
+        />
+      )}
+
+      {/* Sekcja Renderowania - renderuj chapter i obejrzyj wynik */}
+      {suiteId && scenarioId && scenario?.inputContext?.projectId && scenario?.inputContext?.chapterId && status === 'completed' && (
+        <RenderChapterSection
+          suiteId={suiteId}
+          scenarioId={decodeURIComponent(scenarioId)}
+          projectId={scenario.inputContext.projectId}
+          chapterId={scenario.inputContext.chapterId}
         />
       )}
 

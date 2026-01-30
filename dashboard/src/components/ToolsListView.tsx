@@ -2,6 +2,108 @@ import { useMemo } from 'react';
 import { Box, Typography, Chip, Tooltip } from '@mui/material';
 import type { ToolInfo, ToolParameter, ToolParameterDescriptions } from '../api/client';
 
+/**
+ * Generuje klucz dot-notation dla zagnieżdżonego parametru
+ */
+function getParamKey(parentPath: string, paramName: string): string {
+  return parentPath ? `${parentPath}.${paramName}` : paramName;
+}
+
+/**
+ * Rekurencyjnie renderuje parametry w tooltipie z odpowiednią hierarchią
+ */
+function renderParametersHierarchy(
+  params: ToolParameter[],
+  customParamDescriptions: Record<string, string> | undefined,
+  parentPath: string = '',
+  depth: number = 0
+): JSX.Element[] {
+  return params.map((param) => {
+    const paramKey = getParamKey(parentPath, param.name);
+    const customParamDesc = customParamDescriptions?.[paramKey];
+    const isParamModified = customParamDesc && customParamDesc !== param.description;
+    const hasNested = param.properties && param.properties.length > 0;
+
+    // Formatowanie typu
+    let displayType = param.type;
+    if (param.itemType) {
+      displayType = `array[${param.itemType}]`;
+    }
+
+    return (
+      <Box key={paramKey} sx={{ mb: 0.5, pl: depth * 1.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+          {depth > 0 && (
+            <Typography
+              variant="caption"
+              component="span"
+              sx={{ color: 'text.secondary', mr: 0.5 }}
+            >
+              └
+            </Typography>
+          )}
+          <Typography
+            variant="caption"
+            component="span"
+            fontWeight={600}
+            sx={{ color: param.required ? 'primary.light' : 'text.secondary' }}
+          >
+            {param.name}
+          </Typography>
+          <Typography
+            variant="caption"
+            component="span"
+            sx={{ ml: 0.5, fontFamily: 'monospace', fontSize: '0.65rem' }}
+          >
+            ({displayType})
+          </Typography>
+          {!param.required && (
+            <Typography
+              variant="caption"
+              component="span"
+              sx={{ ml: 0.5, fontStyle: 'italic', color: 'text.secondary' }}
+            >
+              opcjonalny
+            </Typography>
+          )}
+          {isParamModified && (
+            <Chip label="zmod." size="small" color="warning" sx={{ height: 14, fontSize: '0.5rem', ml: 0.5 }} />
+          )}
+          {hasNested && (
+            <Chip
+              label={`${param.properties!.length} pól`}
+              size="small"
+              variant="outlined"
+              sx={{ height: 14, fontSize: '0.5rem', ml: 0.5 }}
+            />
+          )}
+        </Box>
+        {isParamModified ? (
+          <>
+            <Typography variant="caption" display="block" sx={{ pl: depth > 0 ? 2 : 1, color: 'warning.light' }}>
+              Custom: {customParamDesc}
+            </Typography>
+            <Typography variant="caption" display="block" sx={{ pl: depth > 0 ? 2 : 1, color: 'text.secondary', fontStyle: 'italic', fontSize: '0.6rem' }}>
+              Domyślny: {param.description}
+            </Typography>
+          </>
+        ) : param.description ? (
+          <Typography variant="caption" display="block" sx={{ pl: depth > 0 ? 2 : 1, color: 'text.secondary' }}>
+            {param.description}
+          </Typography>
+        ) : null}
+
+        {/* Rekurencyjnie renderuj zagnieżdżone właściwości */}
+        {hasNested && (
+          <Box sx={{ mt: 0.5 }}>
+            {renderParametersHierarchy(param.properties!, customParamDescriptions, paramKey, depth + 1)}
+          </Box>
+        )}
+      </Box>
+    );
+  });
+}
+
 interface ToolsListViewProps {
   tools: ToolInfo[];
   enabledTools?: string[];
@@ -124,58 +226,7 @@ export function ToolsListView({
                           <Typography variant="caption" fontWeight={600} display="block" sx={{ mb: 0.5 }}>
                             Parametry:
                           </Typography>
-                          {tool.parameters.map((param: ToolParameter) => {
-                            const customParamDesc = customParamDescriptions?.[param.name];
-                            const isParamModified = customParamDesc && customParamDesc !== param.description;
-
-                            return (
-                              <Box key={param.name} sx={{ mb: 0.5 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                  <Typography
-                                    variant="caption"
-                                    component="span"
-                                    fontWeight={600}
-                                    sx={{ color: param.required ? 'primary.light' : 'text.secondary' }}
-                                  >
-                                    {param.name}
-                                  </Typography>
-                                  <Typography
-                                    variant="caption"
-                                    component="span"
-                                    sx={{ ml: 0.5, fontFamily: 'monospace', fontSize: '0.65rem' }}
-                                  >
-                                    ({param.type})
-                                  </Typography>
-                                  {!param.required && (
-                                    <Typography
-                                      variant="caption"
-                                      component="span"
-                                      sx={{ ml: 0.5, fontStyle: 'italic', color: 'text.secondary' }}
-                                    >
-                                      opcjonalny
-                                    </Typography>
-                                  )}
-                                  {isParamModified && (
-                                    <Chip label="zmod." size="small" color="warning" sx={{ height: 14, fontSize: '0.5rem', ml: 0.5 }} />
-                                  )}
-                                </Box>
-                                {isParamModified ? (
-                                  <>
-                                    <Typography variant="caption" display="block" sx={{ pl: 1, color: 'warning.light' }}>
-                                      Custom: {customParamDesc}
-                                    </Typography>
-                                    <Typography variant="caption" display="block" sx={{ pl: 1, color: 'text.secondary', fontStyle: 'italic', fontSize: '0.6rem' }}>
-                                      Domyślny: {param.description}
-                                    </Typography>
-                                  </>
-                                ) : param.description ? (
-                                  <Typography variant="caption" display="block" sx={{ pl: 1, color: 'text.secondary' }}>
-                                    {param.description}
-                                  </Typography>
-                                ) : null}
-                              </Box>
-                            );
-                          })}
+                          {renderParametersHierarchy(tool.parameters, customParamDescriptions)}
                         </Box>
                       )}
                     </Box>

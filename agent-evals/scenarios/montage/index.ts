@@ -11,7 +11,10 @@ export { scenario as moveBlockWithContext } from './move-blocks/move-block-with-
 export { scenario as removeAllGaps } from './remove-gaps/remove-all-gaps.scenario';
 export { scenario as removeSecondBlock } from './remove-blocks/remove-second-block.scenario';
 export { scenario as videoResizeMode } from './info-questions/video-resize-mode.scenario';
+export { scenario as checkFrameContent } from './info-questions/check-frame-content.scenario';
 export { scenario as createTimelineMoveBlock } from './timeline-management/create-timeline-move-block.scenario';
+export { scenario as selectBestVersionInsulinSpeech } from './complex-montage/select-best-version-insulin-speech.scenario';
+export { scenario as selectHookClipsFromLecture } from './complex-montage/select-hook-clips-from-lecture.scenario';
 
 import { scenario as moveBlockLater } from './move-block-later.scenario';
 import { scenario as moveBlockTooEarly } from './move-block-too-early.scenario';
@@ -22,7 +25,10 @@ import { scenario as moveBlockWithContext } from './move-blocks/move-block-with-
 import { scenario as removeAllGaps } from './remove-gaps/remove-all-gaps.scenario';
 import { scenario as removeSecondBlock } from './remove-blocks/remove-second-block.scenario';
 import { scenario as videoResizeMode } from './info-questions/video-resize-mode.scenario';
+import { scenario as checkFrameContent } from './info-questions/check-frame-content.scenario';
 import { scenario as createTimelineMoveBlock } from './timeline-management/create-timeline-move-block.scenario';
+import { scenario as selectBestVersionInsulinSpeech } from './complex-montage/select-best-version-insulin-speech.scenario';
+import { scenario as selectHookClipsFromLecture } from './complex-montage/select-hook-clips-from-lecture.scenario';
 
 /**
  * Wszystkie scenariusze montage
@@ -37,7 +43,10 @@ export const allMontageScenarios = [
   removeAllGaps,
   removeSecondBlock,
   videoResizeMode,
+  checkFrameContent,
   createTimelineMoveBlock,
+  selectBestVersionInsulinSpeech,
+  selectHookClipsFromLecture,
 ];
 
 /**
@@ -57,9 +66,14 @@ export const scenariosByCategory = {
   },
   infoQuestions: {
     videoSettings: [videoResizeMode],
+    frameInspection: [checkFrameContent],
   },
   timelineManagement: {
     basic: [createTimelineMoveBlock],
+  },
+  complexMontage: {
+    assetSelection: [selectBestVersionInsulinSpeech],
+    hookCreation: [selectHookClipsFromLecture],
   },
 };
 

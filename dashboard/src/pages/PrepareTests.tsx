@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { Box, Typography, Button, Stack, Alert, CircularProgress } from '@mui/material';
 import { Clear as ClearIcon } from '@mui/icons-material';
 
-import { usePrepareTestsState } from '../hooks/usePrepareTestsState';
+import { usePrepareTestsState, TransAgentType } from '../hooks/usePrepareTestsState';
+import { SystemPromptMode } from './prepareTestsTypes';
 import {
   TestConfigSection,
-  SystemPromptSection,
-  ToolsSelectorSection,
+  ToolsDescriptionSection,
+  AgentsConfigSection,
   ScenariosSelectorSection,
   ToolDescriptionEditDialog,
   RunTestsButton,
@@ -16,6 +17,14 @@ export default function PrepareTests() {
   const state = usePrepareTestsState();
   const [toolsExpanded, setToolsExpanded] = useState(false);
   const [scenariosExpanded, setScenariosExpanded] = useState(true);
+
+  // Pobierz listę typów trans agentów
+  const transAgentTypes = Object.keys(state.defaultTransAgentPrompts) as TransAgentType[];
+
+  // Handler dla zmiany promptu trans agenta (łączy prompt i mode)
+  const handleTransAgentPromptChange = (type: TransAgentType, prompt: string, mode: SystemPromptMode) => {
+    state.setTransAgentPrompt(type, { raw: prompt, mode });
+  };
 
   return (
     <Box>
@@ -49,6 +58,7 @@ export default function PrepareTests() {
       )}
 
       <Stack spacing={3}>
+        {/* 1. KONFIGURACJA */}
         <TestConfigSection
           agent={state.agent}
           model={state.model}
@@ -58,29 +68,46 @@ export default function PrepareTests() {
           onThinkingModeChange={state.setThinkingMode}
         />
 
-        <SystemPromptSection
-          systemPrompt={state.systemPrompt}
-          defaultPrompt={state.defaultPrompt}
-          systemPromptMode={state.systemPromptMode}
-          onSystemPromptChange={state.setSystemPrompt}
-          onModeChange={state.setSystemPromptMode}
-          onReset={state.handleResetPrompt}
-        />
-
-        <ToolsSelectorSection
+        {/* 2. NARZĘDZIA (edycja opisów) */}
+        <ToolsDescriptionSection
           tools={state.tools}
           toolsByCategory={state.toolsByCategory}
-          enabledTools={state.enabledTools}
           toolDescriptions={state.toolDescriptions}
+          toolParameterDescriptions={state.toolParameterDescriptions}
           loading={state.toolsLoading}
           expanded={toolsExpanded}
           onToggleExpanded={() => setToolsExpanded(!toolsExpanded)}
-          onToolToggle={state.handleToolToggle}
-          onSelectAll={state.handleSelectAllTools}
-          onDeselectAll={state.handleDeselectAllTools}
-          onEditToolDescription={state.handleOpenToolEdit}
+          onEditTool={state.handleOpenToolEdit}
         />
 
+        {/* 3. KONFIGURACJA AGENTÓW */}
+        <AgentsConfigSection
+          // Główny agent
+          mainAgentPrompt={state.systemPrompt}
+          mainAgentDefaultPrompt={state.defaultPrompt}
+          mainAgentPromptMode={state.systemPromptMode}
+          mainAgentTools={state.tools}
+          mainAgentEnabledTools={state.enabledTools}
+          onMainAgentPromptChange={state.setSystemPrompt}
+          onMainAgentModeChange={state.setSystemPromptMode}
+          onMainAgentToolToggle={state.handleToolToggle}
+          onMainAgentSelectAllTools={state.handleSelectAllTools}
+          onMainAgentDeselectAllTools={state.handleDeselectAllTools}
+          onMainAgentResetPrompt={state.handleResetPrompt}
+          // Trans agenty
+          transAgentTypes={transAgentTypes}
+          transAgentPrompts={state.transAgentPrompts}
+          defaultTransAgentPrompts={state.defaultTransAgentPrompts}
+          transAgentTools={state.transAgentTools}
+          transAgentEnabledTools={state.transAgentEnabledTools}
+          onTransAgentPromptChange={handleTransAgentPromptChange}
+          onTransAgentToolToggle={state.handleTransAgentToolToggle}
+          onTransAgentSelectAllTools={state.handleSelectAllTransAgentTools}
+          onTransAgentDeselectAllTools={state.handleDeselectAllTransAgentTools}
+          onTransAgentReset={state.resetTransAgentPrompt}
+        />
+
+        {/* 4. SCENARIUSZE */}
         <ScenariosSelectorSection
           scenarios={state.filteredScenarios}
           selectedScenarios={state.selectedScenarios}

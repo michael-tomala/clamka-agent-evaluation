@@ -1,7 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { api, Scenario, ToolInfo } from '../api/client';
+import { api, Scenario, ToolInfo, TransAgentPromptConfig } from '../api/client';
 import { AgentType, ModelType, ThinkingMode, SystemPromptMode } from '../pages/prepareTestsTypes';
+
+/** Dostępne typy trans agentów */
+const TRANS_AGENT_TYPES = ['media-scout'] as const;
+export type TransAgentType = (typeof TRANS_AGENT_TYPES)[number];
 
 export interface UsePrepareTestsStateReturn {
   // Inicjalizacja
@@ -26,6 +30,20 @@ export interface UsePrepareTestsStateReturn {
   setSystemPrompt: (value: string) => void;
   setSystemPromptMode: (mode: SystemPromptMode) => void;
   handleResetPrompt: () => void;
+
+  // Trans Agent Prompts
+  transAgentPrompts: Record<TransAgentType, TransAgentPromptConfig>;
+  defaultTransAgentPrompts: Record<TransAgentType, string>;
+  setTransAgentPrompt: (type: TransAgentType, config: TransAgentPromptConfig) => void;
+  resetTransAgentPrompt: (type: TransAgentType) => void;
+
+  // Trans Agent Tools
+  transAgentTools: Record<TransAgentType, string[]>;
+  transAgentEnabledTools: Record<TransAgentType, Set<string>>;
+  transAgentToolsLoading: boolean;
+  handleTransAgentToolToggle: (type: TransAgentType, toolName: string) => void;
+  handleSelectAllTransAgentTools: (type: TransAgentType) => void;
+  handleDeselectAllTransAgentTools: (type: TransAgentType) => void;
 
   // Tools
   tools: ToolInfo[];
@@ -85,6 +103,23 @@ export function usePrepareTestsState(): UsePrepareTestsStateReturn {
   const [model, setModel] = useState<ModelType>('sonnet');
   const [thinkingMode, setThinkingMode] = useState<ThinkingMode>('think');
 
+  // Trans Agent Prompts
+  const [transAgentPrompts, setTransAgentPrompts] = useState<Record<TransAgentType, TransAgentPromptConfig>>(
+    {} as Record<TransAgentType, TransAgentPromptConfig>
+  );
+  const [defaultTransAgentPrompts, setDefaultTransAgentPrompts] = useState<Record<TransAgentType, string>>(
+    {} as Record<TransAgentType, string>
+  );
+
+  // Trans Agent Tools
+  const [transAgentTools, setTransAgentTools] = useState<Record<TransAgentType, string[]>>(
+    {} as Record<TransAgentType, string[]>
+  );
+  const [transAgentEnabledTools, setTransAgentEnabledTools] = useState<Record<TransAgentType, Set<string>>>(
+    {} as Record<TransAgentType, Set<string>>
+  );
+  const [transAgentToolsLoading, setTransAgentToolsLoading] = useState(false);
+
   // Narzędzia
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [enabledTools, setEnabledTools] = useState<Set<string>>(new Set());
@@ -108,6 +143,57 @@ export function usePrepareTestsState(): UsePrepareTestsStateReturn {
   // Status
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+
+  /**
+   * Ładuje domyślne prompty dla wszystkich trans agentów
+   */
+  const loadDefaultTransAgentPrompts = async () => {
+    const defaults: Record<TransAgentType, string> = {} as Record<TransAgentType, string>;
+
+    for (const type of TRANS_AGENT_TYPES) {
+      try {
+        const response = await api.getTransAgentPrompt(type);
+        defaults[type] = response.prompt;
+      } catch (e) {
+        console.warn(`[usePrepareTestsState] Failed to load trans agent prompt for ${type}:`, e);
+        defaults[type] = '';
+      }
+    }
+
+    setDefaultTransAgentPrompts(defaults);
+    // Zainicjuj transAgentPrompts z domyślnymi wartościami (raw = domyślny prompt, mode = append)
+    const initial: Record<TransAgentType, TransAgentPromptConfig> = {} as Record<TransAgentType, TransAgentPromptConfig>;
+    for (const type of TRANS_AGENT_TYPES) {
+      initial[type] = { raw: defaults[type], mode: 'append' };
+    }
+    setTransAgentPrompts(initial);
+  };
+
+  /**
+   * Ładuje narzędzia dla wszystkich trans agentów
+   */
+  const loadTransAgentTools = async () => {
+    setTransAgentToolsLoading(true);
+    const toolsMap: Record<TransAgentType, string[]> = {} as Record<TransAgentType, string[]>;
+    const enabledMap: Record<TransAgentType, Set<string>> = {} as Record<TransAgentType, Set<string>>;
+
+    for (const type of TRANS_AGENT_TYPES) {
+      try {
+        const response = await api.getTransAgentTools(type);
+        toolsMap[type] = response.tools;
+        // Domyślnie wszystkie narzędzia włączone
+        enabledMap[type] = new Set(response.tools);
+      } catch (e) {
+        console.warn(`[usePrepareTestsState] Failed to load trans agent tools for ${type}:`, e);
+        toolsMap[type] = [];
+        enabledMap[type] = new Set();
+      }
+    }
+
+    setTransAgentTools(toolsMap);
+    setTransAgentEnabledTools(enabledMap);
+    setTransAgentToolsLoading(false);
+  };
 
   // INICJALIZACJA - uruchamia się RAZ przy mount
   useEffect(() => {
@@ -176,6 +262,32 @@ export function usePrepareTestsState(): UsePrepareTestsStateReturn {
             .filter((p): p is string => p !== undefined);
           setSelectedScenarios(new Set(validPaths));
 
+          // Ładowanie domyślnych promptów i narzędzi trans agentów
+          await Promise.all([
+            loadDefaultTransAgentPrompts(),
+            loadTransAgentTools(),
+          ]);
+
+          // Nadpisz custom promptami z configSnapshot (rerun)
+          if (suiteData.configSnapshot?.transAgentPrompts) {
+            setTransAgentPrompts(prev => ({
+              ...prev,
+              ...suiteData.configSnapshot!.transAgentPrompts as Record<TransAgentType, TransAgentPromptConfig>,
+            }));
+          }
+
+          // Nadpisz enabled tools dla trans agentów z configSnapshot (rerun)
+          if (suiteData.configSnapshot?.transAgentEnabledTools) {
+            const enabledMap: Record<TransAgentType, Set<string>> = {} as Record<TransAgentType, Set<string>>;
+            for (const [type, tools] of Object.entries(suiteData.configSnapshot.transAgentEnabledTools)) {
+              enabledMap[type as TransAgentType] = new Set(tools);
+            }
+            setTransAgentEnabledTools(prev => ({
+              ...prev,
+              ...enabledMap,
+            }));
+          }
+
         } else {
           // === ŚCIEŻKA DOMYŚLNA ===
           const defaultAgent: AgentType = 'montage';
@@ -196,6 +308,12 @@ export function usePrepareTestsState(): UsePrepareTestsStateReturn {
           const filteredScenarios = allScenarios.filter(s => s.agent === defaultAgent && s.available);
           setScenarios(filteredScenarios);
           setSelectedScenarios(new Set(filteredScenarios.map(s => s.path)));
+
+          // Ładowanie domyślnych promptów i narzędzi trans agentów
+          await Promise.all([
+            loadDefaultTransAgentPrompts(),
+            loadTransAgentTools(),
+          ]);
         }
       } catch (e) {
         setError(rerunSuiteId
@@ -335,6 +453,49 @@ export function usePrepareTestsState(): UsePrepareTestsStateReturn {
     setSystemPrompt(defaultPrompt);
   };
 
+  const handleSetTransAgentPrompt = (type: TransAgentType, config: TransAgentPromptConfig) => {
+    setTransAgentPrompts(prev => ({
+      ...prev,
+      [type]: config,
+    }));
+  };
+
+  const handleResetTransAgentPrompt = (type: TransAgentType) => {
+    const defaultValue = defaultTransAgentPrompts[type] || '';
+    setTransAgentPrompts(prev => ({
+      ...prev,
+      [type]: { raw: defaultValue, mode: 'append' },
+    }));
+  };
+
+  const handleTransAgentToolToggle = (type: TransAgentType, toolName: string) => {
+    setTransAgentEnabledTools(prev => {
+      const current = prev[type] || new Set<string>();
+      const next = new Set(current);
+      if (next.has(toolName)) {
+        next.delete(toolName);
+      } else {
+        next.add(toolName);
+      }
+      return { ...prev, [type]: next };
+    });
+  };
+
+  const handleSelectAllTransAgentTools = (type: TransAgentType) => {
+    const allTools = transAgentTools[type] || [];
+    setTransAgentEnabledTools(prev => ({
+      ...prev,
+      [type]: new Set(allTools),
+    }));
+  };
+
+  const handleDeselectAllTransAgentTools = (type: TransAgentType) => {
+    setTransAgentEnabledTools(prev => ({
+      ...prev,
+      [type]: new Set(),
+    }));
+  };
+
   const handleOpenToolEdit = (tool: ToolInfo) => {
     setEditingTool(tool);
     setEditingDescription(toolDescriptions[tool.name] || tool.description);
@@ -434,6 +595,36 @@ export function usePrepareTestsState(): UsePrepareTestsStateReturn {
         params.toolParameterDescriptions = toolParameterDescriptions;
       }
 
+      // Dodaj custom prompty trans agentów jeśli różnią się od domyślnych
+      const modifiedTransAgentPrompts: Record<string, TransAgentPromptConfig> = {};
+      for (const type of TRANS_AGENT_TYPES) {
+        const config = transAgentPrompts[type];
+        const defaultVal = defaultTransAgentPrompts[type] || '';
+        // Dodaj tylko jeśli prompt jest zmodyfikowany lub mode !== 'append'
+        if (config && (config.raw !== defaultVal || config.mode !== 'append')) {
+          modifiedTransAgentPrompts[type] = config;
+        }
+      }
+      if (Object.keys(modifiedTransAgentPrompts).length > 0) {
+        params.transAgentPrompts = modifiedTransAgentPrompts;
+        console.log('[PrepareTests] Sending transAgentPrompts:', Object.keys(modifiedTransAgentPrompts));
+      }
+
+      // Dodaj trans agent enabled tools jeśli różnią się od domyślnych
+      const modifiedTransAgentEnabledTools: Record<string, string[]> = {};
+      for (const type of TRANS_AGENT_TYPES) {
+        const allTools = transAgentTools[type] || [];
+        const enabledToolsSet = transAgentEnabledTools[type] || new Set<string>();
+        // Dodaj tylko jeśli nie wszystkie narzędzia są włączone
+        if (enabledToolsSet.size !== allTools.length) {
+          modifiedTransAgentEnabledTools[type] = Array.from(enabledToolsSet);
+        }
+      }
+      if (Object.keys(modifiedTransAgentEnabledTools).length > 0) {
+        params.transAgentEnabledTools = modifiedTransAgentEnabledTools;
+        console.log('[PrepareTests] Sending transAgentEnabledTools:', modifiedTransAgentEnabledTools);
+      }
+
       const { suiteId } = await api.runSuite(params);
       navigate(`/results/${suiteId}`);
     } catch (e) {
@@ -468,6 +659,20 @@ export function usePrepareTestsState(): UsePrepareTestsStateReturn {
     setSystemPrompt,
     setSystemPromptMode,
     handleResetPrompt,
+
+    // Trans Agent Prompts
+    transAgentPrompts,
+    defaultTransAgentPrompts,
+    setTransAgentPrompt: handleSetTransAgentPrompt,
+    resetTransAgentPrompt: handleResetTransAgentPrompt,
+
+    // Trans Agent Tools
+    transAgentTools,
+    transAgentEnabledTools,
+    transAgentToolsLoading,
+    handleTransAgentToolToggle,
+    handleSelectAllTransAgentTools,
+    handleDeselectAllTransAgentTools,
 
     // Tools
     tools,

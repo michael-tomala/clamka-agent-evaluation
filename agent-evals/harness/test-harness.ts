@@ -6,8 +6,11 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
+import fs from 'fs';
 import { JsonStorage } from '../storage/json-storage';
+import { TestVectorStore } from '../storage/test-vector-store';
 import { storageRegistry } from '../../../shared/storage';
+import { semanticSearchService } from '../../../electron/services/vector/SemanticSearchService';
 import { ToolTracker } from './tool-tracker';
 import { checkExpectations } from './assertions';
 import { TestableAgentAdapter, type AgentType } from './testable-agent-adapter';
@@ -19,6 +22,7 @@ import type {
   ToolCall,
   RawMessage,
   SystemPromptConfig,
+  TransAgentPromptConfig,
 } from '../types/scenario';
 
 // ============================================================================
@@ -33,6 +37,12 @@ export interface TestHarnessOptions {
    * Domyślnie: testing/agent-evals/fixtures/clamka.db
    */
   fixturesDbPath?: string;
+  /**
+   * Ścieżka do katalogu LanceDB fixtures dla wyszukiwania wektorowego.
+   * Domyślnie: testing/agent-evals/fixtures/lancedb
+   * Jeśli katalog istnieje, TestVectorStore zostanie zainicjalizowany.
+   */
+  vectorFixturesPath?: string;
   /** Timeout dla pojedynczego testu w ms (domyślnie: 60000) */
   defaultTimeout?: number;
   /** Czy logować szczegóły do konsoli */
@@ -61,6 +71,10 @@ export interface TestHarnessOptions {
   toolDescriptions?: Record<string, string>;
   /** Custom opisy parametrów narzędzi (nadpisują domyślne) - zapisywane w snapshocie */
   toolParameterDescriptions?: Record<string, Record<string, string>>;
+  /** Custom prompty dla trans agentów (klucz = typ np. 'media-scout') */
+  transAgentPrompts?: Record<string, TransAgentPromptConfig>;
+  /** Włączone narzędzia dla trans agentów (klucz = typ trans agenta, wartość = lista nazw narzędzi) */
+  transAgentEnabledTools?: Record<string, string[]>;
 
   // === OPCJE ZAPISU DO BAZY DANYCH ===
 
@@ -101,6 +115,10 @@ export interface ITestableAgent {
   getTools(): Record<string, (...args: unknown[]) => unknown>;
   /** Ustawia opakowane narzędzia */
   setTools(tools: Record<string, (...args: unknown[]) => unknown>): void;
+  /** Zwraca częściowe metryki (dla partial results przy timeout) */
+  getPartialMetrics?(): { inputTokens: number; outputTokens: number; turnCount: number };
+  /** Anuluje bieżącą operację agenta (używane przy timeout) */
+  cancel?(): void;
 }
 
 // ============================================================================
@@ -109,10 +127,11 @@ export interface ITestableAgent {
 
 // Typ dla Required<TestHarnessOptions> z opcjonalnymi polami bazy danych
 type RequiredHarnessOptions = Required<Pick<TestHarnessOptions,
-  'fixturesPath' | 'fixturesDbPath' | 'defaultTimeout' | 'verbose' | 'onToolCall' | 'onTestComplete'
+  'fixturesPath' | 'fixturesDbPath' | 'vectorFixturesPath' | 'defaultTimeout' | 'verbose' | 'onToolCall' | 'onTestComplete'
 >> & Pick<TestHarnessOptions,
   'saveResults' | 'tags' | 'label' | 'configSnapshot' | 'onMessage' | 'defaultSystemPrompt' |
-  'model' | 'thinkingMode' | 'enabledTools' | 'disabledTools' | 'toolDescriptions' | 'toolParameterDescriptions'
+  'model' | 'thinkingMode' | 'enabledTools' | 'disabledTools' | 'toolDescriptions' | 'toolParameterDescriptions' |
+  'transAgentPrompts' | 'transAgentEnabledTools'
 >;
 
 export class AgentTestHarness {
@@ -124,6 +143,7 @@ export class AgentTestHarness {
     this.options = {
       fixturesPath: options.fixturesPath || path.join(__dirname, '../fixtures'),
       fixturesDbPath: options.fixturesDbPath || path.join(__dirname, '../fixtures/clamka.db'),
+      vectorFixturesPath: options.vectorFixturesPath || path.join(__dirname, '../fixtures/lancedb'),
       defaultTimeout: options.defaultTimeout || 60000,
       verbose: options.verbose || false,
       onToolCall: options.onToolCall || (() => {}),
@@ -137,6 +157,8 @@ export class AgentTestHarness {
       disabledTools: options.disabledTools,
       toolDescriptions: options.toolDescriptions,
       toolParameterDescriptions: options.toolParameterDescriptions,
+      transAgentPrompts: options.transAgentPrompts,
+      transAgentEnabledTools: options.transAgentEnabledTools,
       // Opcje bazy danych
       saveResults: options.saveResults,
       tags: options.tags,
@@ -172,6 +194,14 @@ export class AgentTestHarness {
       );
       this.log(`Loaded SQLite fixtures for project: ${projectId}`);
 
+      // 1b. Załaduj LanceDB fixtures dla wyszukiwania wektorowego (jeśli istnieją)
+      if (fs.existsSync(this.options.vectorFixturesPath)) {
+        const testVectorStore = new TestVectorStore(this.options.vectorFixturesPath);
+        await testVectorStore.initialize();
+        semanticSearchService.setVectorStore(testVectorStore);
+        this.log(`Loaded LanceDB fixtures from: ${this.options.vectorFixturesPath}`);
+      }
+
       beforeSnapshot = this.storage.getSnapshot();
 
       // 2. Utwórz tracker narzędzi
@@ -194,6 +224,10 @@ export class AgentTestHarness {
         {
           enabledTools: this.options.enabledTools,
           disabledTools: this.options.disabledTools,
+          toolDescriptions: this.options.toolDescriptions,
+          toolParameterDescriptions: this.options.toolParameterDescriptions,
+          transAgentPrompts: this.options.transAgentPrompts,
+          transAgentEnabledTools: this.options.transAgentEnabledTools,
         }
       );
 
@@ -217,7 +251,8 @@ export class AgentTestHarness {
           scenario.input.context,
           messageCallback
         ),
-        timeout
+        timeout,
+        agent // przekaż agenta do runWithTimeout dla cancel przy timeout
       );
 
       // 6. Zbierz wyniki
@@ -251,13 +286,24 @@ export class AgentTestHarness {
       // Pobierz informacje o prompcie
       const promptInfo = agent.getResolvedPromptInfo();
 
-      // Dodaj pierwszą wiadomość użytkownika na początek historii (pełny snapshot konwersacji)
+      // Pobierz logi stderr z Claude CLI
+      const stderrLogs = agent.getCollectedStderrLogs();
+
+      // System prompt jako pierwsza wiadomość (pełny snapshot konwersacji)
+      const systemMessageEntry: RawMessage = {
+        role: 'system',
+        timestamp: new Date(startedAt).getTime(),
+        content: [{ type: 'text', text: promptInfo?.resolvedPrompt || '' }],
+      };
+
+      // Wiadomość użytkownika jako druga
       const userMessageEntry: RawMessage = {
         role: 'user',
         timestamp: new Date(startedAt).getTime(),
         content: [{ type: 'text', text: scenario.input.userMessage }],
       };
-      const fullMessages = [userMessageEntry, ...agentResult.messages];
+
+      const fullMessages = [systemMessageEntry, userMessageEntry, ...agentResult.messages];
 
       const result: TestResult = {
         id: testId,
@@ -283,6 +329,7 @@ export class AgentTestHarness {
           : undefined,
         userMessage: scenario.input.userMessage,
         inputContext: scenario.input.context,
+        stderrLogs: stderrLogs.length > 0 ? stderrLogs : undefined,
       };
 
       this.log(`Scenario ${scenario.name}: ${allPassed ? 'PASSED' : 'FAILED'}`);
@@ -301,7 +348,20 @@ export class AgentTestHarness {
       // Zbierz partial messages (jeśli agent istnieje)
       const partialMessages = agent?.getCollectedMessages() || [];
 
-      // Pierwsza wiadomość użytkownika
+      // Zbierz partial stderr logs (jeśli agent istnieje)
+      const partialStderrLogs = agent?.getCollectedStderrLogs() || [];
+
+      // Pobierz partial prompt info (jeśli agent istnieje)
+      const partialPromptInfo = agent?.getResolvedPromptInfo();
+
+      // System prompt jako pierwsza wiadomość
+      const systemMessageEntry: RawMessage = {
+        role: 'system',
+        timestamp: new Date(startedAt).getTime(),
+        content: [{ type: 'text', text: partialPromptInfo?.resolvedPrompt || '' }],
+      };
+
+      // Wiadomość użytkownika jako druga
       const userMessageEntry: RawMessage = {
         role: 'user',
         timestamp: new Date(startedAt).getTime(),
@@ -324,6 +384,9 @@ export class AgentTestHarness {
         }
       }
 
+      // Zbierz partial metrics (jeśli agent istnieje i ma metodę getPartialMetrics)
+      const partialMetrics = agent?.getPartialMetrics?.();
+
       const result: TestResult = {
         id: testId,
         scenarioId: scenario.id,
@@ -333,25 +396,36 @@ export class AgentTestHarness {
         dataDiff: partialDataDiff,
         assertions: [{ name: 'Execution', passed: false, message: errorMessage }],
         metrics: {
-          inputTokens: 0,
-          outputTokens: 0,
-          totalTokens: 0,
+          inputTokens: partialMetrics?.inputTokens || 0,
+          outputTokens: partialMetrics?.outputTokens || 0,
+          totalTokens: (partialMetrics?.inputTokens || 0) + (partialMetrics?.outputTokens || 0),
           latencyMs: new Date(completedAt).getTime() - new Date(startedAt).getTime(),
-          turnCount: partialToolCalls.length,
+          turnCount: partialMetrics?.turnCount || partialToolCalls.length,
         },
         error: errorMessage,
         startedAt,
         completedAt,
-        messages: [userMessageEntry, ...partialMessages],
+        messages: [systemMessageEntry, userMessageEntry, ...partialMessages],
+        systemPromptInfo: partialPromptInfo
+          ? {
+              source: partialPromptInfo.source,
+              sourceFile: partialPromptInfo.sourceFile,
+              patches: partialPromptInfo.patches,
+              content: partialPromptInfo.rawPrompt,
+              resolvedContent: partialPromptInfo.resolvedPrompt,
+            }
+          : undefined,
         userMessage: scenario.input.userMessage,
         inputContext: scenario.input.context,
+        stderrLogs: partialStderrLogs.length > 0 ? partialStderrLogs : undefined,
       };
 
       this.options.onTestComplete(result);
       return result;
     } finally {
-      // 10. Przywróć domyślne storage (SQLite)
+      // 10. Przywróć domyślne storage (SQLite) i vector store
       storageRegistry.resetToDefaults();
+      semanticSearchService.resetVectorStore();
       this.storage = null;
     }
   }
@@ -496,9 +570,17 @@ export class AgentTestHarness {
   // HELPERS
   // ============================================================================
 
-  private async runWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  private async runWithTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    agent?: TestableAgentAdapter
+  ): Promise<T> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
+        if (agent) {
+          agent.cancel();
+          this.log('Agent cancelled due to timeout');
+        }
         reject(new Error(`Test timeout after ${timeoutMs}ms`));
       }, timeoutMs);
 

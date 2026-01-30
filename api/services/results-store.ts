@@ -25,6 +25,7 @@ export interface ConfigSnapshot {
   systemPromptRaw?: string;
   toolDescriptions?: Record<string, string>;
   toolParameterDescriptions?: Record<string, Record<string, string>>;
+  transAgentPrompts?: Record<string, { raw?: string; mode?: 'append' | 'replace' }>;
 }
 
 export type SuiteStatus = 'pending' | 'running' | 'completed' | 'failed' | 'stopped';
@@ -201,6 +202,9 @@ export class ResultsStore {
     if (!scenarioColumnNames.has('input_context')) {
       this.db.exec("ALTER TABLE scenario_results ADD COLUMN input_context TEXT"); // JSON
     }
+    if (!scenarioColumnNames.has('stderr_logs')) {
+      this.db.exec("ALTER TABLE scenario_results ADD COLUMN stderr_logs TEXT"); // JSON array
+    }
 
     // Nowe tabele: tool_calls i messages
     this.db.exec(`
@@ -235,6 +239,15 @@ export class ResultsStore {
       CREATE INDEX IF NOT EXISTS idx_suite_status ON suite_runs(status);
       CREATE INDEX IF NOT EXISTS idx_suite_job_id ON suite_runs(job_id);
     `);
+
+    // Migracja messages - dodaj parent_tool_use_id
+    const messageColumns = this.db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>;
+    const messageColumnNames = new Set(messageColumns.map(c => c.name));
+
+    if (!messageColumnNames.has('parent_tool_use_id')) {
+      this.db.exec("ALTER TABLE messages ADD COLUMN parent_tool_use_id TEXT");
+      this.db.exec("CREATE INDEX IF NOT EXISTS idx_message_parent ON messages(parent_tool_use_id)");
+    }
   }
 
   // In-memory store dla live status (scenarioStatuses, currentScenario)
@@ -342,7 +355,7 @@ export class ResultsStore {
           input_tokens = ?, output_tokens = ?, turn_count = ?,
           started_at = ?, completed_at = ?, agent_response = ?, error = ?,
           data_diff = ?, assertions = ?, system_prompt_info = ?,
-          status = ?, input_context = ?
+          status = ?, input_context = ?, stderr_logs = ?
       WHERE suite_run_id = ? AND scenario_id = ?
     `).run(
       result.passed ? 1 : 0,
@@ -361,6 +374,7 @@ export class ResultsStore {
       result.systemPromptInfo ? JSON.stringify(result.systemPromptInfo) : null,
       resultStatus,
       result.inputContext ? JSON.stringify(result.inputContext) : null,
+      result.stderrLogs ? JSON.stringify(result.stderrLogs) : null,
       suiteId,
       result.scenarioId
     );
@@ -387,8 +401,8 @@ export class ResultsStore {
     // Zapisz messages
     if (result.messages && result.messages.length > 0) {
       const insertMessage = this.db.prepare(`
-        INSERT INTO messages (scenario_result_id, message_order, role, timestamp, content)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO messages (scenario_result_id, message_order, role, timestamp, content, parent_tool_use_id)
+        VALUES (?, ?, ?, ?, ?, ?)
       `);
       let msgOrder = 0;
       for (const msg of result.messages) {
@@ -397,7 +411,8 @@ export class ResultsStore {
           msgOrder++,
           msg.role,
           msg.timestamp || null,
-          JSON.stringify(msg.content)
+          JSON.stringify(msg.content),
+          msg.parentToolUseId || null
         );
       }
     }
@@ -550,8 +565,8 @@ export class ResultsStore {
       (id, suite_run_id, scenario_id, passed, tokens, latency_ms, json_path,
        scenario_name, input_tokens, output_tokens, turn_count,
        started_at, completed_at, agent_response, error,
-       data_diff, assertions, system_prompt_info, input_context)
-      VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       data_diff, assertions, system_prompt_info, input_context, stderr_logs)
+      VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const insertToolCall = this.db.prepare(`
@@ -560,8 +575,8 @@ export class ResultsStore {
     `);
 
     const insertMessage = this.db.prepare(`
-      INSERT INTO messages (scenario_result_id, message_order, role, timestamp, content)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO messages (scenario_result_id, message_order, role, timestamp, content, parent_tool_use_id)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
 
     for (const result of results) {
@@ -585,7 +600,8 @@ export class ResultsStore {
         result.dataDiff ? JSON.stringify(result.dataDiff) : null,
         result.assertions ? JSON.stringify(result.assertions) : null,
         result.systemPromptInfo ? JSON.stringify(result.systemPromptInfo) : null,
-        result.inputContext ? JSON.stringify(result.inputContext) : null
+        result.inputContext ? JSON.stringify(result.inputContext) : null,
+        result.stderrLogs ? JSON.stringify(result.stderrLogs) : null
       );
 
       // Zapisz tool_calls
@@ -612,7 +628,8 @@ export class ResultsStore {
             msgOrder++,
             msg.role,
             msg.timestamp || null,
-            JSON.stringify(msg.content)
+            JSON.stringify(msg.content),
+            msg.parentToolUseId || null
           );
         }
       }
@@ -747,6 +764,7 @@ export class ResultsStore {
       assertions: string | null;
       system_prompt_info: string | null;
       input_context: string | null;
+      stderr_logs: string | null;
     }>;
 
     // Pobierz tool_calls i messages dla każdego scenariusza
@@ -772,6 +790,7 @@ export class ResultsStore {
         role: string;
         timestamp: number | null;
         content: string;
+        parent_tool_use_id: string | null;
       }>;
 
       return {
@@ -791,6 +810,7 @@ export class ResultsStore {
           role: m.role as 'user' | 'assistant',
           timestamp: m.timestamp || undefined,
           content: JSON.parse(m.content),
+          parentToolUseId: m.parent_tool_use_id || undefined,
         })),
         dataDiff: sr.data_diff ? JSON.parse(sr.data_diff) : undefined,
         assertions: sr.assertions ? JSON.parse(sr.assertions) : undefined,
@@ -807,6 +827,7 @@ export class ResultsStore {
         completedAt: sr.completed_at || undefined,
         systemPromptInfo: sr.system_prompt_info ? JSON.parse(sr.system_prompt_info) : undefined,
         inputContext: sr.input_context ? JSON.parse(sr.input_context) : undefined,
+        stderrLogs: sr.stderr_logs ? JSON.parse(sr.stderr_logs) : undefined,
       };
     });
 
@@ -869,6 +890,7 @@ export class ResultsStore {
       assertions: string | null;
       system_prompt_info: string | null;
       input_context: string | null;
+      stderr_logs: string | null;
     } | undefined;
 
     if (!sr) return null;
@@ -892,6 +914,7 @@ export class ResultsStore {
       role: string;
       timestamp: number | null;
       content: string;
+      parent_tool_use_id: string | null;
     }>;
 
     return {
@@ -911,6 +934,7 @@ export class ResultsStore {
         role: m.role as 'user' | 'assistant',
         timestamp: m.timestamp || undefined,
         content: JSON.parse(m.content),
+        parentToolUseId: m.parent_tool_use_id || undefined,
       })),
       dataDiff: sr.data_diff ? JSON.parse(sr.data_diff) : undefined,
       assertions: sr.assertions ? JSON.parse(sr.assertions) : undefined,
@@ -927,7 +951,37 @@ export class ResultsStore {
       completedAt: sr.completed_at || undefined,
       systemPromptInfo: sr.system_prompt_info ? JSON.parse(sr.system_prompt_info) : undefined,
       inputContext: sr.input_context ? JSON.parse(sr.input_context) : undefined,
+      stderrLogs: sr.stderr_logs ? JSON.parse(sr.stderr_logs) : undefined,
     };
+  }
+
+  /**
+   * Pobiera data_diff dla scenariusza
+   * Używane przez RenderService do aplikowania zmian na fixtures
+   */
+  getScenarioDataDiff(suiteId: string, scenarioId: string): {
+    blocks: {
+      added: Array<{ id: string; data: Record<string, unknown> }>;
+      modified: Array<{ id: string; before: Record<string, unknown>; after: Record<string, unknown> }>;
+      deleted: Array<{ id: string; data: Record<string, unknown> }>;
+    };
+    timelines: {
+      added: Array<{ id: string; data: Record<string, unknown> }>;
+      modified: Array<{ id: string; before: Record<string, unknown>; after: Record<string, unknown> }>;
+      deleted: Array<{ id: string; data: Record<string, unknown> }>;
+    };
+    mediaAssets: {
+      added: Array<{ id: string; data: Record<string, unknown> }>;
+      modified: Array<{ id: string; before: Record<string, unknown>; after: Record<string, unknown> }>;
+      deleted: Array<{ id: string; data: Record<string, unknown> }>;
+    };
+  } | null {
+    const row = this.db.prepare(`
+      SELECT data_diff FROM scenario_results
+      WHERE suite_run_id = ? AND scenario_id = ?
+    `).get(suiteId, scenarioId) as { data_diff: string | null } | undefined;
+
+    return row?.data_diff ? JSON.parse(row.data_diff) : null;
   }
 
   /**

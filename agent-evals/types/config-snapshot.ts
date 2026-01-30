@@ -212,8 +212,8 @@ export interface ScenarioFixtures {
     mediaType: string;
     fileName: string;
     metadata: {
-      durationInFrames?: number;
-      fps?: number;
+      sourceDurationInFrames?: number;
+      sourceFps?: number;
       width?: number;
       height?: number;
     };

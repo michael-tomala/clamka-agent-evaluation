@@ -5,3 +5,5 @@ export { TimelinesAccordion } from './TimelinesAccordion';
 export { MediaAssetsSection } from './MediaAssetsSection';
 export { DiffBlocksTable } from './DiffBlocksTable';
 export { DataDiffView } from './DataDiffView';
+export { LanceDbSection } from './LanceDbSection';
+export { LanceDbTableAccordion } from './LanceDbTableAccordion';

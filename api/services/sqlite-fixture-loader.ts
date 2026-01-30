@@ -124,6 +124,7 @@ interface SqliteFaceRow {
   confidence: number | null;
   fileRelativeStartFrame: number | null;
   fileRelativeEndFrame: number | null;
+  positions: string | null;  // JSON array of FacePosition[]
   createdDate: string;
 }
 
@@ -194,15 +195,16 @@ function mapFace(row: SqliteFaceRow): MediaAssetFace {
   return {
     id: row.id,
     mediaAssetId: row.mediaAssetId,
-    personId: row.personId ?? undefined,
+    personId: row.personId,
     x: row.x,
     y: row.y,
     width: row.width,
     height: row.height,
     embedding: JSON.parse(row.embedding),
-    confidence: row.confidence ?? undefined,
-    fileRelativeStartFrame: row.fileRelativeStartFrame ?? undefined,
-    fileRelativeEndFrame: row.fileRelativeEndFrame ?? undefined,
+    confidence: row.confidence,
+    fileRelativeStartFrame: row.fileRelativeStartFrame,
+    fileRelativeEndFrame: row.fileRelativeEndFrame,
+    positions: row.positions ? JSON.parse(row.positions) : null,
     createdDate: row.createdDate,
   };
 }

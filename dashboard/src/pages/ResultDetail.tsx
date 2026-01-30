@@ -73,6 +73,10 @@ export default function ResultDetail() {
   // System prompt collapse
   const [promptExpanded, setPromptExpanded] = useState(false);
 
+  // Trans Agent Prompts collapse
+  const [transAgentPromptsExpanded, setTransAgentPromptsExpanded] = useState(false);
+  const [expandedTransAgents, setExpandedTransAgents] = useState<Record<string, boolean>>({});
+
   // Tools MCP
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [toolsExpanded, setToolsExpanded] = useState(false);
@@ -581,6 +585,69 @@ export default function ResultDetail() {
                 </Box>
               </Collapse>
             </>
+          )}
+
+          {/* Trans Agent Prompts */}
+          {suite.configSnapshot?.transAgentPrompts && Object.keys(suite.configSnapshot.transAgentPrompts).length > 0 && (
+            <Box mt={2}>
+              <Box display="flex" alignItems="center" gap={1}>
+                <Typography variant="subtitle2">Trans Agent Prompts:</Typography>
+                <Chip
+                  label={`${Object.keys(suite.configSnapshot.transAgentPrompts).length} skonfigurowanych`}
+                  size="small"
+                  color="secondary"
+                />
+                <IconButton size="small" onClick={() => setTransAgentPromptsExpanded(!transAgentPromptsExpanded)}>
+                  {transAgentPromptsExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                </IconButton>
+              </Box>
+              <Collapse in={transAgentPromptsExpanded}>
+                <Stack spacing={1.5} mt={1.5}>
+                  {Object.entries(suite.configSnapshot.transAgentPrompts).map(([agentType, config]) => (
+                    <Box key={agentType} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                      <Box
+                        display="flex"
+                        alignItems="center"
+                        gap={1}
+                        p={1}
+                        sx={{ cursor: 'pointer', '&:hover': { backgroundColor: 'action.hover' } }}
+                        onClick={() => setExpandedTransAgents(prev => ({ ...prev, [agentType]: !prev[agentType] }))}
+                      >
+                        <Typography variant="body2" fontWeight={600}>{agentType}</Typography>
+                        <Chip
+                          label={config.mode || 'append'}
+                          size="small"
+                          color={config.mode === 'replace' ? 'warning' : 'default'}
+                          variant="outlined"
+                        />
+                        <Box flex={1} />
+                        <IconButton size="small">
+                          {expandedTransAgents[agentType] ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                        </IconButton>
+                      </Box>
+                      <Collapse in={expandedTransAgents[agentType]}>
+                        <Box
+                          sx={{
+                            maxHeight: 200,
+                            overflow: 'auto',
+                            fontFamily: 'monospace',
+                            fontSize: 11,
+                            p: 1.5,
+                            backgroundColor: 'action.hover',
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word',
+                            borderTop: '1px solid',
+                            borderColor: 'divider',
+                          }}
+                        >
+                          {config.raw || '(brak treści)'}
+                        </Box>
+                      </Collapse>
+                    </Box>
+                  ))}
+                </Stack>
+              </Collapse>
+            </Box>
           )}
         </Paper>
       )}

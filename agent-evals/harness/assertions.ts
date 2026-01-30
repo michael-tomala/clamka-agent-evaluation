@@ -250,13 +250,39 @@ export class AssertionChecker {
           const matchingBlock = dataDiff.blocks.added.find((b) =>
             this.matchesConditions(b.data, expectedBlock.match)
           );
+
+          if (!matchingBlock) {
+            this.addResult({
+              name: `Block added matching: ${JSON.stringify(expectedBlock.match)}`,
+              passed: false,
+              expected: expectedBlock.match,
+              actual: 'no matching block found',
+              message: 'No matching block was added',
+            });
+            continue;
+          }
+
           this.addResult({
             name: `Block added matching: ${JSON.stringify(expectedBlock.match)}`,
-            passed: !!matchingBlock,
+            passed: true,
             expected: expectedBlock.match,
-            actual: matchingBlock?.data || 'no matching block found',
-            message: matchingBlock ? undefined : 'No matching block was added',
+            actual: matchingBlock.data,
           });
+
+          // Check changes
+          if (expectedBlock.changes) {
+            for (const [key, condition] of Object.entries(expectedBlock.changes)) {
+              const actualValue = (matchingBlock.data as Record<string, unknown>)[key];
+              const passed = this.evaluateCondition(actualValue, condition);
+              this.addResult({
+                name: `Added block '${matchingBlock.id}' field '${key}' matches condition`,
+                passed,
+                expected: condition,
+                actual: actualValue,
+                message: passed ? undefined : `Field '${key}' does not match expected condition`,
+              });
+            }
+          }
         }
       }
 

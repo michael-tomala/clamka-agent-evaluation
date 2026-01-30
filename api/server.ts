@@ -12,6 +12,8 @@ import resultsRoutes from './routes/results';
 import streamRoutes from './routes/stream';
 import toolsRoutes from './routes/tools';
 import fixturesRoutes from './routes/fixtures';
+import claudeVisionRoutes from './routes/claude-vision';
+import renderRoutes from './routes/render';
 
 const PORT = parseInt(process.env.EVAL_API_PORT || '3100');
 const HOST = process.env.EVAL_API_HOST || '0.0.0.0';
@@ -50,6 +52,8 @@ async function start(): Promise<void> {
   await fastify.register(streamRoutes, { prefix: '/api' });
   await fastify.register(toolsRoutes, { prefix: '/api' });
   await fastify.register(fixturesRoutes, { prefix: '/api' });
+  await fastify.register(claudeVisionRoutes, { prefix: '/api' });
+  await fastify.register(renderRoutes, { prefix: '/api' });
 
   // Health check
   fastify.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
@@ -65,6 +69,8 @@ async function start(): Promise<void> {
       jobs: '/api/jobs/:jobId',
       stream: '/api/stream/:jobId (WebSocket)',
       fixtures: '/api/fixtures/projects',
+      render: '/api/render/chapter',
+      renders: '/api/renders/:jobId.mp4',
       health: '/health',
     },
   }));

@@ -7,7 +7,7 @@ import path from 'path';
 import fs from 'fs';
 import { getTestRunnerService } from '../services/test-runner';
 import { getResultsStore } from '../services/results-store';
-import type { TestScenario, SystemPromptConfig } from '../../agent-evals/types/scenario';
+import type { TestScenario, SystemPromptConfig, TransAgentPromptConfig } from '../../agent-evals/types/scenario';
 
 // Ścieżka do głównego katalogu projektu (relatywna do __dirname)
 // testing/api/routes/ -> ../../../ -> główny katalog projektu
@@ -216,6 +216,8 @@ export default async function scenariosRoutes(
       disabledTools?: string[];
       toolDescriptions?: Record<string, string>;
       toolParameterDescriptions?: Record<string, Record<string, string>>;
+      transAgentPrompts?: Record<string, TransAgentPromptConfig>;
+      transAgentEnabledTools?: Record<string, string[]>;
     };
   }>('/scenarios/run-suite', async (request, reply) => {
     const {
@@ -230,6 +232,8 @@ export default async function scenariosRoutes(
       disabledTools,
       toolDescriptions,
       toolParameterDescriptions,
+      transAgentPrompts,
+      transAgentEnabledTools,
     } = request.body || {};
 
     // Diagnostyka - do usunięcia po zdiagnozowaniu problemu
@@ -290,6 +294,8 @@ export default async function scenariosRoutes(
         systemPromptRaw: systemPrompt?.raw,
         toolDescriptions,
         toolParameterDescriptions,
+        transAgentPrompts,
+        transAgentEnabledTools,
       },
     });
 
@@ -305,6 +311,8 @@ export default async function scenariosRoutes(
         disabledTools,
         toolDescriptions,
         toolParameterDescriptions,
+        transAgentPrompts,
+        transAgentEnabledTools,
       },
       suiteRun.id,
       jobId

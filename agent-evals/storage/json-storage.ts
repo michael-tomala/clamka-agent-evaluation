@@ -204,6 +204,59 @@ export class JsonStorage {
       }
     }
 
+    // Synchronizuj enrichment data do EnrichmentStorage (dla MCP tools)
+    const enrichment = this.getEnrichmentStorage() as JsonEnrichmentStorage;
+    for (const [assetId, asset] of this.mediaAssets) {
+      // Transcription segments - zachowuj oryginalne ID z SQLite fixtures
+      // aby matchowały z segmentIds w LanceDB transcription_embeddings
+      if (asset.transcriptionSegments?.length) {
+        enrichment.replaceTranscriptionForAssetWithIds(assetId, asset.transcriptionSegments);
+      }
+      // Focus points
+      if (asset.focusPoints?.length) {
+        enrichment.replaceFocusPointsForAsset(
+          assetId,
+          asset.focusPoints.map((fp) => ({
+            fileRelativeFrame: fp.fileRelativeFrame,
+            description: fp.description,
+            focusX: fp.focusX,
+            focusY: fp.focusY,
+            orderIndex: fp.orderIndex,
+          }))
+        );
+      }
+      // Scenes
+      if (asset.scenes?.length) {
+        enrichment.replaceAllScenesForAsset(
+          assetId,
+          asset.scenes.map((s) => ({
+            sceneIndex: s.sceneIndex,
+            startFrame: s.startFrame,
+            endFrame: s.endFrame,
+            keyFramePath: s.keyFramePath,
+            description: s.description,
+          }))
+        );
+      }
+      // Faces - createFace dla każdej (brak replaceFaces)
+      if (asset.faces?.length) {
+        for (const face of asset.faces) {
+          enrichment.createFace({
+            mediaAssetId: assetId,
+            personId: face.personId,
+            x: face.x,
+            y: face.y,
+            width: face.width,
+            height: face.height,
+            embedding: face.embedding,
+            confidence: face.confidence,
+            fileRelativeStartFrame: face.fileRelativeStartFrame,
+            fileRelativeEndFrame: face.fileRelativeEndFrame,
+          });
+        }
+      }
+    }
+
     console.log(`[JsonStorage] Loaded fixtures from SQLite via loader`);
   }
 

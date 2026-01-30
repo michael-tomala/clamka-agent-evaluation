@@ -10,6 +10,7 @@ import {
   AccordionDetails,
   Chip,
   Stack,
+  Divider,
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
@@ -25,6 +26,7 @@ import {
   CopyButton,
   TimelinesAccordion,
   MediaAssetsSection,
+  LanceDbSection,
 } from '../components/fixtures';
 
 function ChaptersAccordion({ projectId }: { projectId: string }) {
@@ -199,6 +201,10 @@ export default function FixturesPreview() {
           <Typography color="text.secondary">Brak projektow w bazie fixtures</Typography>
         </Box>
       )}
+
+      {/* LanceDB Section */}
+      <Divider sx={{ my: 4 }} />
+      <LanceDbSection />
     </Box>
   );
 }

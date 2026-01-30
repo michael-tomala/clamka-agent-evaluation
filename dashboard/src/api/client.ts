@@ -51,6 +51,8 @@ export interface TestResult {
   startedAt?: string;
   /** Kontekst wejściowy scenariusza (projectId, chapterId, etc.) */
   inputContext?: ScenarioInputContext;
+  /** Logi stderr z Claude CLI */
+  stderrLogs?: string[];
 }
 
 export interface ToolCall {
@@ -70,12 +72,15 @@ export type ContentBlock =
   | { type: 'text'; text: string }
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; tool_use_id: string; content: unknown; is_error?: boolean }
-  | { type: 'thinking'; thinking: string };
+  | { type: 'thinking'; thinking: string }
+  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } };
 
 export interface RawMessage {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   timestamp: number;
   content: ContentBlock[];
+  /** ID parent tool_use jeśli to wiadomość trans agenta */
+  parentToolUseId?: string;
 }
 
 export interface SystemPromptInfo {
@@ -101,6 +106,9 @@ export interface ConfigSnapshot {
   systemPromptRaw?: string;
   toolDescriptions?: Record<string, string>;
   toolParameterDescriptions?: ToolParameterDescriptions;
+  transAgentPrompts?: Record<string, { raw?: string; mode?: 'append' | 'replace' }>;
+  /** Włączone narzędzia dla trans agentów (klucz = typ trans agenta, wartość = lista nazw narzędzi) */
+  transAgentEnabledTools?: Record<string, string[]>;
 }
 
 export type SuiteStatus = 'pending' | 'running' | 'completed' | 'failed' | 'stopped';
@@ -138,6 +146,10 @@ export interface ToolParameter {
   type: string;
   description: string;
   required: boolean;
+  /** Zagnieżdżone właściwości dla z.object() */
+  properties?: ToolParameter[];
+  /** Typ elementu dla z.array() (np. 'object', 'string') */
+  itemType?: string;
 }
 
 export interface ToolInfo {
@@ -165,12 +177,33 @@ export interface RunSuiteParams {
   disabledTools?: string[];
   toolDescriptions?: Record<string, string>;
   toolParameterDescriptions?: ToolParameterDescriptions;
+  /** Custom prompty dla trans agentów (klucz = typ np. 'media-scout') */
+  transAgentPrompts?: Record<string, TransAgentPromptConfig>;
+  /** Włączone narzędzia dla trans agentów (klucz = typ trans agenta, wartość = lista nazw narzędzi) */
+  transAgentEnabledTools?: Record<string, string[]>;
 }
 
 export interface AgentPromptResponse {
   agent: string;
   prompt: string;
   source: string;
+}
+
+export interface TransAgentPromptResponse {
+  transAgentType: string;
+  prompt: string;
+  source: string;
+}
+
+export interface TransAgentToolsResponse {
+  transAgentType: string;
+  tools: string[];
+}
+
+/** Konfiguracja custom promptu dla trans agenta */
+export interface TransAgentPromptConfig {
+  raw?: string;
+  mode?: 'append' | 'replace';
 }
 
 // ============================================================================
@@ -232,6 +265,44 @@ export interface FixturesStatus {
 }
 
 // ============================================================================
+// LANCEDB TYPES
+// ============================================================================
+
+export interface LanceDbStatus {
+  exists: boolean;
+  path: string;
+  tables: string[];
+}
+
+export interface LanceDbProjectCount {
+  projectId: string;
+  count: number;
+}
+
+export interface LanceDbTableStats {
+  tableName: string;
+  displayName: string;
+  totalCount: number;
+  byProject: LanceDbProjectCount[];
+}
+
+export interface LanceDbSampleRecord {
+  [key: string]: string | number | null;
+}
+
+export interface LanceDbSearchResult {
+  id: string;
+  projectId: string;
+  text?: string;
+  score: number;
+  distance: number;
+}
+
+export interface LanceDbSearchResponse {
+  results: LanceDbSearchResult[];
+}
+
+// ============================================================================
 // TEST SCENARIO DEFINITION (from agent-evals/types/scenario.ts)
 // ============================================================================
 
@@ -280,6 +351,127 @@ export interface TestScenarioDefinition {
     patches?: { find: string; replace: string }[];
     mode?: 'append' | 'replace';
   };
+}
+
+// ============================================================================
+// CLAUDE VISION TEST TYPES
+// ============================================================================
+
+export interface ClaudeVisionTestRequest {
+  videoPath: string;
+  prompt?: string;
+  model?: string;
+  frameWidth?: number;
+  maxFrames?: number;
+  systemPrompt?: string;
+  systemPromptMode?: 'append' | 'replace';
+}
+
+export interface ClaudeVisionSpriteSheet {
+  base64: string;
+  cols: number;
+  rows: number;
+  frameWidth: number;
+  frameHeight: number;
+  totalFrames: number;
+}
+
+export interface ClaudeVisionSceneDescription {
+  location: string;
+  content: string;
+  mood: string;
+  subjects: string[];
+  actions: string[];
+  cameraMovement: string;
+  framing: string;
+}
+
+export interface ClaudeVisionTestResponse {
+  messages: RawMessage[];
+  spriteSheet: ClaudeVisionSpriteSheet;
+  videoMetadata: { width: number; height: number; fps: number; duration: number; frameCount: number };
+  parsed: ClaudeVisionSceneDescription | null;
+  parseError?: string;
+  defaultPrompt: string;
+  defaultSystemPrompt: string;
+  usedPrompt: string;
+  durationMs: number;
+  usedSystemPrompt?: string;
+  systemPromptMode?: 'append' | 'replace';
+  tokenUsage?: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadInputTokens?: number;
+    cacheCreationInputTokens?: number;
+  };
+  /** ID zapisanego testu (automatycznie dodawane przez backend) */
+  savedTestId?: string;
+}
+
+/** Rekord testu zapisany w bazie */
+export interface ClaudeVisionTestRecord {
+  id: string;
+  createdAt: string;
+  videoPath: string;
+  model: string;
+  frameWidth: number;
+  maxFrames: number;
+  prompt: string;
+  systemPrompt?: string;
+  systemPromptMode?: 'append' | 'replace';
+  videoWidth?: number;
+  videoHeight?: number;
+  videoFps?: number;
+  videoDuration?: number;
+  videoFrameCount?: number;
+  spriteCols?: number;
+  spriteRows?: number;
+  spriteFrameWidth?: number;
+  spriteFrameHeight?: number;
+  spriteTotalFrames?: number;
+  spriteFilePath?: string;
+  parsedResult?: ClaudeVisionSceneDescription;
+  parseError?: string;
+  rawResponse: string;
+  durationMs: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
+  costUsd?: number;
+  label?: string;
+}
+
+/** Konfiguracja testu do załadowania */
+export interface ClaudeVisionTestConfig {
+  videoPath: string;
+  model: string;
+  frameWidth: number;
+  maxFrames: number;
+  prompt: string;
+  systemPrompt?: string;
+  systemPromptMode?: 'append' | 'replace';
+}
+
+// ============================================================================
+// RENDER TYPES
+// ============================================================================
+
+export type RenderStatus = 'pending' | 'rendering' | 'encoding' | 'completed' | 'error';
+
+export interface RenderJob {
+  jobId: string;
+  projectId: string;
+  chapterId: string;
+  status: RenderStatus;
+  progress: number;
+  currentFrame?: number;
+  totalFrames?: number;
+  previewFrame?: string;
+  videoUrl?: string;
+  error?: string;
+  startedAt: string;
+  completedAt?: string;
 }
 
 // ============================================================================
@@ -337,6 +529,12 @@ export const api = {
   // Prompts
   getAgentPrompt: (agent: string) =>
     fetchJson<AgentPromptResponse>(`/prompts/${agent}`),
+
+  getTransAgentPrompt: (transAgentType: string) =>
+    fetchJson<TransAgentPromptResponse>(`/prompts/transagent/${transAgentType}`),
+
+  getTransAgentTools: (transAgentType: string) =>
+    fetchJson<TransAgentToolsResponse>(`/tools/transagent/${transAgentType}`),
 
   // Jobs
   getJobStatus: (jobId: string) => fetchJson<JobStatus>(`/jobs/${jobId}`),
@@ -434,6 +632,90 @@ export const api = {
 
   getFixtureMediaAssets: (projectId: string) =>
     fetchJson<FixtureMediaAsset[]>(`/fixtures/projects/${projectId}/media-assets`),
+
+  // LanceDB
+  getLanceDbStatus: () => fetchJson<LanceDbStatus>('/fixtures/lancedb/status'),
+
+  getLanceDbTableStats: (tableName: string) =>
+    fetchJson<LanceDbTableStats>(`/fixtures/lancedb/tables/${tableName}/stats`),
+
+  getLanceDbTableSample: (
+    tableName: string,
+    params?: { limit?: number; projectId?: string }
+  ) => {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.projectId) query.set('projectId', params.projectId);
+    return fetchJson<LanceDbSampleRecord[]>(
+      `/fixtures/lancedb/tables/${tableName}/sample?${query}`
+    );
+  },
+
+  searchLanceDbTable: (
+    tableName: string,
+    params: { query: string; projectId?: string; limit?: number }
+  ) =>
+    fetchJson<LanceDbSearchResponse>(
+      `/fixtures/lancedb/tables/${tableName}/search`,
+      {
+        method: 'POST',
+        body: JSON.stringify(params),
+      }
+    ),
+
+  // Claude Vision
+  getClaudeVisionDefaultPrompt: () =>
+    fetchJson<{ prompt: string; systemPrompt: string }>('/claude-vision/default-prompt'),
+
+  analyzeClaudeVision: (params: ClaudeVisionTestRequest) =>
+    fetchJson<ClaudeVisionTestResponse>('/claude-vision/analyze', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }),
+
+  // Claude Vision - History
+  getClaudeVisionTests: (params?: { limit?: number; offset?: number; model?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.offset) query.set('offset', String(params.offset));
+    if (params?.model) query.set('model', params.model);
+    return fetchJson<{ tests: ClaudeVisionTestRecord[] }>(`/claude-vision/tests?${query}`);
+  },
+
+  getClaudeVisionTest: (id: string) =>
+    fetchJson<ClaudeVisionTestRecord>(`/claude-vision/tests/${id}`),
+
+  getClaudeVisionTestSprite: (id: string) =>
+    fetchJson<{ base64: string }>(`/claude-vision/tests/${id}/sprite`),
+
+  getClaudeVisionTestConfig: (id: string) =>
+    fetchJson<ClaudeVisionTestConfig>(`/claude-vision/tests/${id}/config`),
+
+  deleteClaudeVisionTest: (id: string) =>
+    fetchJson<{ success: boolean }>(`/claude-vision/tests/${id}`, {
+      method: 'DELETE',
+    }),
+
+  updateClaudeVisionTestLabel: (id: string, label: string | null) =>
+    fetchJson<{ success: boolean }>(`/claude-vision/tests/${id}/label`, {
+      method: 'POST',
+      body: JSON.stringify({ label }),
+    }),
+
+  // Render
+  renderChapter: (suiteId: string, scenarioId: string, projectId: string, chapterId: string) =>
+    fetchJson<{ jobId: string; status: string; message: string }>('/render/chapter', {
+      method: 'POST',
+      body: JSON.stringify({ suiteId, scenarioId, projectId, chapterId }),
+    }),
+
+  getRenderStatus: (jobId: string) =>
+    fetchJson<RenderJob>(`/render/${jobId}/status`),
+
+  deleteRender: (jobId: string) =>
+    fetchJson<{ success: boolean; message: string }>(`/render/${jobId}`, {
+      method: 'DELETE',
+    }),
 };
 
 // ============================================================================

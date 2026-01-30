@@ -8,7 +8,8 @@ import { EventEmitter } from 'events';
 import { getRedisConnection } from '../config/redis';
 import { AgentTestHarness, summarizeResults } from '../../agent-evals/harness/test-harness';
 import { getResultsStore } from './results-store';
-import type { TestScenario, TestResult, ToolCall, RawMessage, SystemPromptConfig } from '../../agent-evals/types/scenario';
+import { initializeElectronEnvWithPath } from '../../../electron/utils/electronEnv';
+import type { TestScenario, TestResult, ToolCall, RawMessage, SystemPromptConfig, TransAgentPromptConfig } from '../../agent-evals/types/scenario';
 
 // ============================================================================
 // TYPES
@@ -36,6 +37,10 @@ export interface TestJob {
     toolDescriptions?: Record<string, string>;
     /** Custom opisy parametrów narzędzi (nadpisują domyślne) */
     toolParameterDescriptions?: Record<string, Record<string, string>>;
+    /** Custom prompty dla trans agentów */
+    transAgentPrompts?: Record<string, TransAgentPromptConfig>;
+    /** Włączone narzędzia dla trans agentów (klucz = typ, wartość = lista nazw narzędzi) */
+    transAgentEnabledTools?: Record<string, string[]>;
   };
 }
 
@@ -146,6 +151,8 @@ export class TestRunnerService extends EventEmitter {
               systemPromptSource: job.data.options?.systemPrompt
                 ? (job.data.options.systemPrompt.raw ? 'custom-raw' : 'custom-file')
                 : 'default',
+              transAgentPrompts: job.data.options?.transAgentPrompts,
+              transAgentEnabledTools: job.data.options?.transAgentEnabledTools,
             },
           });
           console.log(`[TestRunner] Results saved: ${suiteRun.id}`);
@@ -210,6 +217,8 @@ export class TestRunnerService extends EventEmitter {
       disabledTools?: string[];
       toolDescriptions?: Record<string, string>;
       toolParameterDescriptions?: Record<string, Record<string, string>>;
+      transAgentPrompts?: Record<string, TransAgentPromptConfig>;
+      transAgentEnabledTools?: Record<string, string[]>;
     },
     suiteId?: string,
     existingJobId?: string
@@ -310,6 +319,11 @@ export class TestRunnerService extends EventEmitter {
    * Przetwarza job
    */
   private async processJob(job: Job<TestJob>): Promise<TestResult[]> {
+    // Inicjalizuj ElectronEnv z poprawną ścieżką root projektu
+    // (wymagane dla narzędzi Remotion które używają getAppPath())
+    const projectRoot = path.resolve(__dirname, '../../../');
+    initializeElectronEnvWithPath(projectRoot);
+
     const { scenarios, options, suiteId } = job.data;
     const results: TestResult[] = [];
     const allToolCalls: ToolCall[] = [];
@@ -334,6 +348,8 @@ export class TestRunnerService extends EventEmitter {
       disabledTools: options?.disabledTools,
       toolDescriptions: options?.toolDescriptions,
       toolParameterDescriptions: options?.toolParameterDescriptions,
+      transAgentPrompts: options?.transAgentPrompts,
+      transAgentEnabledTools: options?.transAgentEnabledTools,
       onToolCall: (toolCall) => {
         allToolCalls.push(toolCall);
         this.emit('event', {

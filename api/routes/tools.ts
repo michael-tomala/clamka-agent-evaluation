@@ -11,6 +11,7 @@ import { zodSchemaToParams } from '../../../electron/services/mcp/tools/utils/zo
 import {
   MONTAGE_ALLOWED_TOOLS,
   SCRIPT_ALLOWED_TOOLS,
+  MEDIA_SCOUT_TRANSAGENT_ALLOWED_TOOLS,
 } from '../../../shared/prompts/agents/allowed-tools';
 import type { McpServerContext } from '../../../electron/services/mcp/types';
 import type { ToolParameter } from '../../../shared/types/agentPrompt';
@@ -39,6 +40,17 @@ interface AgentPromptResponse {
   agent: string;
   prompt: string;
   source: string;
+}
+
+interface TransAgentPromptResponse {
+  transAgentType: string;
+  prompt: string;
+  source: string;
+}
+
+interface TransAgentToolsResponse {
+  transAgentType: string;
+  tools: string[];
 }
 
 // ============================================================================
@@ -196,6 +208,49 @@ function getAgentPrompt(agent: string): AgentPromptResponse | null {
   };
 }
 
+/**
+ * Pobiera prompt trans agenta z pliku .md
+ */
+function getTransAgentPrompt(transAgentType: string): TransAgentPromptResponse | null {
+  const validTransAgents = ['media-scout'];
+  if (!validTransAgents.includes(transAgentType)) {
+    return null;
+  }
+
+  const promptPath = `shared/prompts/transagents/${transAgentType}.md`;
+  const fullPath = path.join(PROJECT_ROOT, promptPath);
+
+  if (!fs.existsSync(fullPath)) {
+    return null;
+  }
+
+  const prompt = fs.readFileSync(fullPath, 'utf-8');
+  return {
+    transAgentType,
+    prompt,
+    source: promptPath,
+  };
+}
+
+/**
+ * Pobiera listę narzędzi dla trans agenta
+ */
+function getTransAgentTools(transAgentType: string): TransAgentToolsResponse | null {
+  const toolsMap: Record<string, string[]> = {
+    'media-scout': MEDIA_SCOUT_TRANSAGENT_ALLOWED_TOOLS,
+  };
+
+  const tools = toolsMap[transAgentType];
+  if (!tools) {
+    return null;
+  }
+
+  return {
+    transAgentType,
+    tools,
+  };
+}
+
 // ============================================================================
 // ROUTES
 // ============================================================================
@@ -244,5 +299,37 @@ export default async function toolsRoutes(
     }
 
     return reply.send(promptData);
+  });
+
+  /**
+   * GET /api/prompts/transagent/:type - domyślny prompt trans agenta
+   *
+   * Zwraca zawartość pliku .md z promptem systemowym dla trans agenta.
+   */
+  fastify.get<{ Params: { type: string } }>('/prompts/transagent/:type', async (request, reply) => {
+    const { type } = request.params;
+    const promptData = getTransAgentPrompt(type);
+
+    if (!promptData) {
+      return reply.status(404).send({ error: `Prompt for trans agent '${type}' not found` });
+    }
+
+    return reply.send(promptData);
+  });
+
+  /**
+   * GET /api/tools/transagent/:type - lista narzędzi dla trans agenta
+   *
+   * Zwraca listę nazw narzędzi dozwolonych dla danego typu trans agenta.
+   */
+  fastify.get<{ Params: { type: string } }>('/tools/transagent/:type', async (request, reply) => {
+    const { type } = request.params;
+    const toolsData = getTransAgentTools(type);
+
+    if (!toolsData) {
+      return reply.status(404).send({ error: `Tools for trans agent '${type}' not found` });
+    }
+
+    return reply.send(toolsData);
   });
 }

@@ -223,6 +223,16 @@ export interface SystemPromptConfig {
   mode?: 'append' | 'replace';
 }
 
+/**
+ * Konfiguracja custom promptu dla trans agenta (używana w testach)
+ */
+export interface TransAgentPromptConfig {
+  /** Surowy tekst promptu */
+  raw?: string;
+  /** Tryb aplikacji: 'append' - dodaj do domyślnego, 'replace' - zastąp */
+  mode?: 'append' | 'replace';
+}
+
 export interface TestScenario {
   /** Unikalny identyfikator scenariusza */
   id: string;
@@ -284,12 +294,14 @@ export type ContentBlock =
  * Reprezentuje pojedynczą wiadomość (user lub assistant)
  */
 export interface RawMessage {
-  /** Typ wiadomości: 'user' (tool_result) lub 'assistant' (tool_use, text) */
-  role: 'user' | 'assistant';
+  /** Typ wiadomości: 'system' (prompt), 'user' (tool_result) lub 'assistant' (tool_use, text) */
+  role: 'user' | 'assistant' | 'system';
   /** Timestamp w ms */
   timestamp: number;
   /** Zawartość wiadomości - tablica bloków */
   content: ContentBlock[];
+  /** ID parent tool_use jeśli to wiadomość trans agenta */
+  parentToolUseId?: string;
 }
 
 /**
@@ -370,6 +382,9 @@ export interface TestResult {
 
   /** Kontekst wejściowy scenariusza (projectId, chapterId, etc.) */
   inputContext?: ScenarioInputContext;
+
+  /** Logi stderr z Claude CLI (surowy tekst) */
+  stderrLogs?: string[];
 }
 
 /**

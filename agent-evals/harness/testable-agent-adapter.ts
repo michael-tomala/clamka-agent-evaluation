@@ -15,14 +15,16 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { MontageAgentService } from '../../../electron/services/agents/MontageAgentService';
 import { ScriptAgentService } from '../../../electron/services/agents/ScriptAgentService';
+import type { CancelToken } from '../../../electron/services/agents/BaseAgentService';
 import { storageRegistry } from '../../../shared/storage';
 import { promptLoaderService } from '../../../electron/services/base/PromptLoaderService';
 import { agentPromptService } from '../../../electron/services/base/AgentPromptService';
 import { JsonStorage } from '../storage/json-storage';
 import { ToolTracker } from './tool-tracker';
+import { getToolDefinitionsForAgent } from './tool-definitions-provider';
 import type { ITestableAgent } from './test-harness';
 import type { ChatMessage, Project, Chapter } from '../../../shared/types';
-import type { ToolWrapper } from '../../../electron/services/mcp/types';
+import type { ToolWrapper, TransAgentPromptConfig } from '../../../electron/services/mcp/types';
 import type { SystemPromptConfig, RawMessage, ContentBlock, ScenarioInputContext } from '../types/scenario';
 
 export type AgentType = 'montage' | 'script';
@@ -46,6 +48,14 @@ export interface TestableAgentToolsConfig {
   enabledTools?: string[];
   /** Lista wyłączonych narzędzi (alternatywa do enabledTools) */
   disabledTools?: string[];
+  /** Custom opisy narzędzi (nadpisują domyślne) */
+  toolDescriptions?: Record<string, string>;
+  /** Custom opisy parametrów narzędzi (nadpisują domyślne) */
+  toolParameterDescriptions?: Record<string, Record<string, string>>;
+  /** Custom prompty dla trans agentów (klucz = typ np. 'media-scout') */
+  transAgentPrompts?: Record<string, TransAgentPromptConfig>;
+  /** Włączone narzędzia dla trans agentów (klucz = typ trans agenta, wartość = lista nazw narzędzi) */
+  transAgentEnabledTools?: Record<string, string[]>;
 }
 
 /**
@@ -99,8 +109,18 @@ export class TestableAgentAdapter implements ITestableAgent {
   // Zebrane wiadomości z konwersacji (dla live streaming)
   private collectedMessages: RawMessage[] = [];
 
+  // Zebrane logi stderr z Claude CLI (dla diagnostyki)
+  private collectedStderrLogs: string[] = [];
+
   // Callback do emitowania wiadomości w czasie rzeczywistym
   private onMessageCallback?: (message: RawMessage) => void;
+
+  // Akumulatory tokenów - do użycia przy timeout (partial metrics)
+  private accumulatedInputTokens = 0;
+  private accumulatedOutputTokens = 0;
+
+  // Token do anulowania agenta (używany przy timeout)
+  private cancelToken: CancelToken = { cancelled: false };
 
   constructor(
     agentType: AgentType,
@@ -341,8 +361,12 @@ export class TestableAgentAdapter implements ITestableAgent {
     };
     messages: RawMessage[];
   }> {
-    // Reset zebranych wiadomości na początku nowej konwersacji
+    // Reset zebranych wiadomości, logów stderr, akumulatorów tokenów i cancel token na początku nowej konwersacji
     this.collectedMessages = [];
+    this.collectedStderrLogs = [];
+    this.accumulatedInputTokens = 0;
+    this.accumulatedOutputTokens = 0;
+    this.cancelToken = { cancelled: false };
     this.onMessageCallback = onMessage;
     const typedContext = context as TestableAgentContext | undefined;
 
@@ -359,23 +383,77 @@ export class TestableAgentAdapter implements ITestableAgent {
     // Przygotuj konfigurację narzędzi - wylicz finalną listę enabled tools
     const enabledToolsForAgent = this.computeEnabledTools();
 
+    // Pobierz definicje narzędzi i nadpisz opisy jeśli podane w konfiguracji
+    let toolDefs = getToolDefinitionsForAgent(this.agentType, enabledToolsForAgent);
+
+    // Nadpisz opisy narzędzi jeśli podane w konfiguracji
+    if (this.toolsConfig?.toolDescriptions) {
+      toolDefs = toolDefs.map(def => ({
+        ...def,
+        description: this.toolsConfig!.toolDescriptions![def.name] ?? def.description
+      }));
+    }
+
+    // Nadpisz opisy parametrów jeśli podane
+    if (this.toolsConfig?.toolParameterDescriptions) {
+      toolDefs = toolDefs.map(def => {
+        const paramOverrides = this.toolsConfig!.toolParameterDescriptions![def.name];
+        if (!paramOverrides || !def.parameters) return def;
+
+        return {
+          ...def,
+          parameters: def.parameters.map(param => ({
+            ...param,
+            description: paramOverrides[param.name] ?? param.description
+          }))
+        };
+      });
+    }
+
+    // Dodaj informację o narzędziach na początku stderr logs
+    this.collectedStderrLogs.push(`[Config] Tools (${toolDefs.length}):`);
+    for (const tool of toolDefs) {
+      this.collectedStderrLogs.push(`  - ${tool.name}: ${tool.description}`);
+      for (const param of tool.parameters) {
+        const reqMark = param.required ? '*' : '';
+        this.collectedStderrLogs.push(`      ${param.name}${reqMark} (${param.type}): ${param.description}`);
+      }
+    }
+
     let result: ChatMessage | null = null;
     let turnCount = 0;
 
     // Callback do śledzenia tool calls i zbierania wiadomości
-    const onMessageInternal = (msg: { type: string; message: Record<string, unknown> }) => {
-      // SDK zwraca strukturę: { message: { content: [...] } }
-      const msgContent = msg.message?.message as Record<string, unknown> | undefined;
-      const content = msgContent?.content as Array<Record<string, unknown>> | undefined;
+    const onMessageInternal = (msg: {
+      type: string;
+      message: Record<string, unknown>;
+      parent_tool_use_id?: string; // SDK przesyła to pole dla wiadomości trans agentów
+    }) => {
+      // SDK zwraca różne struktury:
+      // - Główny agent: { message: { message: { content: [...] } } }
+      // - Trans agent: { message: { content: [...] }, parent_tool_use_id: "..." }
+      const nestedMsgContent = msg.message?.message as Record<string, unknown> | undefined;
+      const directContent = msg.message?.content as Array<Record<string, unknown>> | undefined;
+      const content = (nestedMsgContent?.content || directContent) as Array<Record<string, unknown>> | undefined;
 
       // Zbierz KAŻDĄ wiadomość do collectedMessages
       if (Array.isArray(content) && content.length > 0) {
+        const normalizedContent = content.map((block) => this.normalizeContentBlock(block));
         const rawMessage: RawMessage = {
-          role: msg.type as 'user' | 'assistant',
+          role: msg.type as 'user' | 'assistant' | 'system',
           timestamp: Date.now(),
-          content: content.map((block) => this.normalizeContentBlock(block)),
+          content: normalizedContent,
+          parentToolUseId: msg.parent_tool_use_id, // Przechwycenie ID parenta dla trans agentów
         };
         this.collectedMessages.push(rawMessage);
+
+        // Akumuluj tokeny (estymacja: ~2 tokeny na znak)
+        const textLength = this.estimateTextLength(normalizedContent);
+        if (msg.type === 'user') {
+          this.accumulatedInputTokens += textLength * 2;
+        } else if (msg.type === 'assistant') {
+          this.accumulatedOutputTokens += textLength * 2;
+        }
 
         // Wywołaj callback dla live streaming
         if (this.onMessageCallback) {
@@ -427,25 +505,34 @@ export class TestableAgentAdapter implements ITestableAgent {
         workspaceHeight: parseInt(String(projectSettings['export.resolution.height']) || '1080'),
       };
 
-      this.resolvedPromptInfo.resolvedPrompt = agentPromptService.resolvePromptPlaceholders(
-        this.agentType,
-        this.resolvedPromptInfo.rawPrompt,
-        resolveContext
-      );
-      console.log(`[TestableAgentAdapter] Resolved base placeholders in prompt for: ${this.agentType}`);
-
-      // Dla montage agent - rozwiąż dodatkowe placeholdery specyficzne dla montażu
-      // ({{timelinesSnapshot}}, {{projectContext}}, {{mediaPoolTotal}}, etc.)
+      // Dla montage agent - użyj buildFullResolveContext dla pełnego zestawu placeholderów
       if (this.agentType === 'montage' && project && chapter) {
         const montageAgent = this.agent as MontageAgentService;
-        this.resolvedPromptInfo.resolvedPrompt = montageAgent.resolveMontagePlaceholders(
-          this.resolvedPromptInfo.resolvedPrompt,
+        const fullContext = montageAgent.buildFullResolveContext(
           typedContext.projectId,
           typedContext.chapterId,
           project,
           chapter
         );
-        console.log(`[TestableAgentAdapter] Resolved Montage-specific placeholders (timelinesSnapshot, etc.)`);
+        // Nadpisz FPS jeśli customFps podane
+        if (inputContext.customFps) {
+          fullContext.fps = inputContext.customFps;
+        }
+        this.resolvedPromptInfo.resolvedPrompt = agentPromptService.resolveAllPlaceholders(
+          this.resolvedPromptInfo.rawPrompt,
+          fullContext
+        );
+        console.log(`[TestableAgentAdapter] Resolved all placeholders for Montage agent`);
+      } else {
+        // Dla innych agentów - użyj podstawowego kontekstu
+        this.resolvedPromptInfo.resolvedPrompt = agentPromptService.resolveAllPlaceholders(
+          this.resolvedPromptInfo.rawPrompt,
+          {
+            ...resolveContext,
+            projectContext: project?.projectSettings?.['project.context'] as string || 'Brak opisu',
+          }
+        );
+        console.log(`[TestableAgentAdapter] Resolved placeholders for: ${this.agentType}`);
       }
     }
 
@@ -454,6 +541,11 @@ export class TestableAgentAdapter implements ITestableAgent {
 
     // Pobierz mode z resolved prompt info (domyślnie 'append')
     const promptMode = this.resolvedPromptInfo?.mode;
+
+    // Callback dla zbierania logów stderr z Claude CLI
+    const stderrCallback = (message: string) => {
+      this.collectedStderrLogs.push(message);
+    };
 
     // Wywołaj odpowiednią metodę agenta z toolWrapper i customSystemPrompt
     if (this.agentType === 'montage') {
@@ -466,14 +558,17 @@ export class TestableAgentAdapter implements ITestableAgent {
         model,
         thinkingMode,
         onMessageInternal,
-        undefined, // cancelToken
+        this.cancelToken, // cancelToken - do anulowania przy timeout
         undefined, // sender
         inputContext.contextRefs, // contextRefs - referencje kontekstowe z scenariusza
         undefined, // images
         this.toolWrapper, // toolWrapper dla precyzyjnego śledzenia
         customPrompt, // customSystemPrompt (nadpisuje domyślny)
         promptMode, // systemPromptMode: 'append' lub 'replace'
-        enabledToolsForAgent // lista dozwolonych narzędzi (dla testów)
+        enabledToolsForAgent, // lista dozwolonych narzędzi (dla testów)
+        stderrCallback, // callback dla logów stderr z Claude CLI
+        this.toolsConfig?.transAgentPrompts, // custom prompty dla trans agentów
+        this.toolsConfig?.transAgentEnabledTools // włączone narzędzia dla trans agentów
       );
     } else {
       const scriptAgent = this.agent as ScriptAgentService;
@@ -486,14 +581,17 @@ export class TestableAgentAdapter implements ITestableAgent {
         thinkingMode,
         typedContext.chapterId, // optional chapterId
         onMessageInternal,
-        undefined, // cancelToken
+        this.cancelToken, // cancelToken - do anulowania przy timeout
         undefined, // sender
         inputContext.contextRefs, // contextRefs - referencje kontekstowe z scenariusza
         undefined, // images
         this.toolWrapper, // toolWrapper dla precyzyjnego śledzenia
         customPrompt, // customSystemPrompt (nadpisuje domyślny)
         promptMode, // systemPromptMode: 'append' lub 'replace'
-        enabledToolsForAgent // lista dozwolonych narzędzi (dla testów)
+        enabledToolsForAgent, // lista dozwolonych narzędzi (dla testów)
+        stderrCallback, // callback dla logów stderr z Claude CLI
+        this.toolsConfig?.transAgentPrompts, // custom prompty dla trans agentów
+        this.toolsConfig?.transAgentEnabledTools // włączone narzędzia dla trans agentów
       );
     }
 
@@ -522,6 +620,27 @@ export class TestableAgentAdapter implements ITestableAgent {
       },
       messages: this.collectedMessages,
     };
+  }
+
+  /**
+   * Estymuje długość tekstu z content blocks (dla szacowania tokenów)
+   */
+  private estimateTextLength(content: ContentBlock[]): number {
+    let length = 0;
+    for (const block of content) {
+      if (block.type === 'text') {
+        length += block.text.length;
+      } else if (block.type === 'tool_use') {
+        length += JSON.stringify(block.input).length;
+      } else if (block.type === 'tool_result') {
+        length += typeof block.content === 'string'
+          ? block.content.length
+          : JSON.stringify(block.content).length;
+      } else if (block.type === 'thinking') {
+        length += block.thinking.length;
+      }
+    }
+    return length;
   }
 
   /**
@@ -573,10 +692,38 @@ export class TestableAgentAdapter implements ITestableAgent {
   }
 
   /**
+   * Zwraca częściowe metryki (dla partial results przy timeout)
+   * Używane gdy scenariusz kończy się timeout'em, ale agent już przetworzył część zapytania
+   */
+  getPartialMetrics(): { inputTokens: number; outputTokens: number; turnCount: number } {
+    return {
+      inputTokens: this.accumulatedInputTokens,
+      outputTokens: this.accumulatedOutputTokens,
+      turnCount: this.collectedMessages.filter((m) => m.role === 'assistant').length,
+    };
+  }
+
+  /**
    * Zwraca zebrane wiadomości z konwersacji (dla partial results przy timeout)
    */
   getCollectedMessages(): RawMessage[] {
     return this.collectedMessages;
+  }
+
+  /**
+   * Zwraca zebrane logi stderr z Claude CLI (dla diagnostyki testów)
+   */
+  getCollectedStderrLogs(): string[] {
+    return this.collectedStderrLogs;
+  }
+
+  /**
+   * Anuluje bieżącą operację agenta.
+   * Używane przy timeout aby zatrzymać agenta i zapobiec dalszym wywołaniom API.
+   */
+  cancel(): void {
+    this.cancelToken.cancelled = true;
+    console.log('[TestableAgentAdapter] Agent cancelled');
   }
 
   /**
