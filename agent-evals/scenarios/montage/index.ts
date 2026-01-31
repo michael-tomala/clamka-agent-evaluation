@@ -15,6 +15,7 @@ export { scenario as checkFrameContent } from './info-questions/check-frame-cont
 export { scenario as createTimelineMoveBlock } from './timeline-management/create-timeline-move-block.scenario';
 export { scenario as selectBestVersionInsulinSpeech } from './complex-montage/select-best-version-insulin-speech.scenario';
 export { scenario as selectHookClipsFromLecture } from './complex-montage/select-hook-clips-from-lecture.scenario';
+export { scenario as planLectureChapters } from './complex-montage/plan-lecture-chapters.scenario';
 
 import { scenario as moveBlockLater } from './move-block-later.scenario';
 import { scenario as moveBlockTooEarly } from './move-block-too-early.scenario';
@@ -29,6 +30,7 @@ import { scenario as checkFrameContent } from './info-questions/check-frame-cont
 import { scenario as createTimelineMoveBlock } from './timeline-management/create-timeline-move-block.scenario';
 import { scenario as selectBestVersionInsulinSpeech } from './complex-montage/select-best-version-insulin-speech.scenario';
 import { scenario as selectHookClipsFromLecture } from './complex-montage/select-hook-clips-from-lecture.scenario';
+import { scenario as planLectureChapters } from './complex-montage/plan-lecture-chapters.scenario';
 
 /**
  * Wszystkie scenariusze montage
@@ -47,6 +49,7 @@ export const allMontageScenarios = [
   createTimelineMoveBlock,
   selectBestVersionInsulinSpeech,
   selectHookClipsFromLecture,
+  planLectureChapters,
 ];
 
 /**
@@ -74,6 +77,7 @@ export const scenariosByCategory = {
   complexMontage: {
     assetSelection: [selectBestVersionInsulinSpeech],
     hookCreation: [selectHookClipsFromLecture],
+    chapterPlanning: [planLectureChapters],
   },
 };
 

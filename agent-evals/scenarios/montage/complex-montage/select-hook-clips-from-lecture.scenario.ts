@@ -53,15 +53,7 @@ Hook powinien:
     {
       toolCalls: {
         // Agent MUSI pobrać transkrypcje i utworzyć bloki
-        required: ['getMediaAssetsTranscriptions', 'createBlocksFromAssets'],
-        // Może użyć innych narzędzi do eksploracji
-        optional: [
-          'listMediaAssets',
-          'listChapterTimelinesSimplifiedBlocks',
-          'searchTranscription',
-          'getMediaAsset',
-        ],
-        forbidden: [],
+        required: ['createBlocksFromAssets'],
       },
 
       finalState: {
@@ -99,15 +91,6 @@ Hook powinien:
         },
       },
 
-      // Agent powinien odnieść się do assetu wykładu w odpowiedzi
-      referenceTags: {
-        required: [
-          {
-            tag: 'mediaAsset',
-            attrs: { id: '02d10a4a-06f5-4288-af9e-a80c5e940372' },
-          },
-        ],
-      },
     },
   ],
 

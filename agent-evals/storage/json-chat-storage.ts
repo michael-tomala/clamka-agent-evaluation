@@ -188,7 +188,7 @@ export class JsonChatStorage implements IChatStorage {
       throw new Error(`Message not found: ${upToMessageId}`);
     }
 
-    let messagesToCopy = allMessages.slice(0, messageIndex + 1);
+    const messagesToCopy = allMessages.slice(0, messageIndex + 1);
 
     const targetMessage = messagesToCopy[messagesToCopy.length - 1];
     const resumeAtUuid = targetMessage?.sdkUuid;

@@ -997,23 +997,23 @@ class JsonBlockStorage implements IBlockStorage {
     return block;
   }
 
-  split(blockId: string, splitFrame: number): { original: Block; newBlock: Block } {
+  split(blockId: string, splitSourceFrame: number, offsetProjectFrames: number): { original: Block; newBlock: Block } {
     const block = this.blocks.get(blockId);
     if (!block) throw new Error(`Block ${blockId} not found`);
 
     const originalEndFrame = block.fileRelativeEndFrame;
 
-    // Modify original block
-    block.fileRelativeEndFrame = block.fileRelativeStartFrame + splitFrame;
+    // Modify original block (fileRelative = SOURCE frames)
+    block.fileRelativeEndFrame = splitSourceFrame;
     block.modifiedDate = new Date().toISOString();
 
-    // Create new block
+    // Create new block (używamy offsetProjectFrames dla timeline pozycji)
     const newBlock = this.create({
       timelineId: block.timelineId,
       blockType: block.blockType,
       mediaAssetId: block.mediaAssetId,
-      timelineOffsetInFrames: block.timelineOffsetInFrames + splitFrame,
-      fileRelativeStartFrame: block.fileRelativeStartFrame + splitFrame,
+      timelineOffsetInFrames: block.timelineOffsetInFrames + Math.round(offsetProjectFrames),
+      fileRelativeStartFrame: splitSourceFrame,
       fileRelativeEndFrame: originalEndFrame,
       blockSettings: { ...block.blockSettings },
     });
@@ -1275,6 +1275,25 @@ class JsonMediaAssetStorage implements IMediaAssetStorage {
     const asset = this.mediaAssets.get(assetId);
     if (asset) {
       asset.waveformData = waveformData as Record<string, unknown>;
+    }
+  }
+
+  getSilenceData(assetId: string): unknown | null {
+    const asset = this.mediaAssets.get(assetId);
+    return asset?.silenceData ?? null;
+  }
+
+  setSilenceData(assetId: string, silenceData: unknown): void {
+    const asset = this.mediaAssets.get(assetId);
+    if (asset) {
+      (asset as any).silenceData = silenceData;
+    }
+  }
+
+  clearSilenceData(assetId: string): void {
+    const asset = this.mediaAssets.get(assetId);
+    if (asset) {
+      (asset as any).silenceData = undefined;
     }
   }
 
