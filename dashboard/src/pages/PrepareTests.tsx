@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Box, Typography, Button, Stack, Alert, CircularProgress } from '@mui/material';
 import { Clear as ClearIcon } from '@mui/icons-material';
 
-import { usePrepareTestsState, TransAgentType } from '../hooks/usePrepareTestsState';
+import { usePrepareTestsState, TransAgentType, SubagentType } from '../hooks/usePrepareTestsState';
 import { SystemPromptMode } from './prepareTestsTypes';
 import {
   TestConfigSection,
@@ -21,9 +21,17 @@ export default function PrepareTests() {
   // Pobierz listę typów trans agentów
   const transAgentTypes = Object.keys(state.defaultTransAgentPrompts) as TransAgentType[];
 
+  // Pobierz listę typów subagentów (Task tool)
+  const subagentTypes = Object.keys(state.defaultSubagentPrompts) as SubagentType[];
+
   // Handler dla zmiany promptu trans agenta (łączy prompt i mode)
   const handleTransAgentPromptChange = (type: TransAgentType, prompt: string, mode: SystemPromptMode) => {
     state.setTransAgentPrompt(type, { raw: prompt, mode });
+  };
+
+  // Handler dla zmiany promptu subagenta (tylko prompt, brak mode)
+  const handleSubagentPromptChange = (type: SubagentType, prompt: string) => {
+    state.setSubagentPrompt(type, { prompt });
   };
 
   return (
@@ -105,6 +113,17 @@ export default function PrepareTests() {
           onTransAgentSelectAllTools={state.handleSelectAllTransAgentTools}
           onTransAgentDeselectAllTools={state.handleDeselectAllTransAgentTools}
           onTransAgentReset={state.resetTransAgentPrompt}
+          // Subagenty (Task tool)
+          subagentTypes={subagentTypes}
+          subagentPrompts={state.subagentPrompts}
+          defaultSubagentPrompts={state.defaultSubagentPrompts}
+          subagentTools={state.subagentTools}
+          subagentEnabledTools={state.subagentEnabledTools}
+          onSubagentPromptChange={handleSubagentPromptChange}
+          onSubagentToolToggle={state.handleSubagentToolToggle}
+          onSubagentSelectAllTools={state.handleSelectAllSubagentTools}
+          onSubagentDeselectAllTools={state.handleDeselectAllSubagentTools}
+          onSubagentReset={state.resetSubagentPrompt}
         />
 
         {/* 4. SCENARIUSZE */}

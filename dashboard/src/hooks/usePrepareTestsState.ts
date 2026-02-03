@@ -1,11 +1,15 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { api, Scenario, ToolInfo, TransAgentPromptConfig } from '../api/client';
+import { api, Scenario, ToolInfo, TransAgentPromptConfig, SubagentPromptConfig } from '../api/client';
 import { AgentType, ModelType, ThinkingMode, SystemPromptMode } from '../pages/prepareTestsTypes';
 
 /** Dostępne typy trans agentów */
 const TRANS_AGENT_TYPES = ['media-scout'] as const;
 export type TransAgentType = (typeof TRANS_AGENT_TYPES)[number];
+
+/** Dostępne typy subagentów (Task tool) */
+const SUBAGENT_TYPES = ['chapter-explorator', 'web-researcher', 'script-segments-editor', 'executor'] as const;
+export type SubagentType = (typeof SUBAGENT_TYPES)[number];
 
 export interface UsePrepareTestsStateReturn {
   // Inicjalizacja
@@ -44,6 +48,20 @@ export interface UsePrepareTestsStateReturn {
   handleTransAgentToolToggle: (type: TransAgentType, toolName: string) => void;
   handleSelectAllTransAgentTools: (type: TransAgentType) => void;
   handleDeselectAllTransAgentTools: (type: TransAgentType) => void;
+
+  // Subagent Prompts (Task tool)
+  subagentPrompts: Record<SubagentType, SubagentPromptConfig>;
+  defaultSubagentPrompts: Record<SubagentType, string>;
+  setSubagentPrompt: (type: SubagentType, config: SubagentPromptConfig) => void;
+  resetSubagentPrompt: (type: SubagentType) => void;
+
+  // Subagent Tools (Task tool)
+  subagentTools: Record<SubagentType, string[]>;
+  subagentEnabledTools: Record<SubagentType, Set<string>>;
+  subagentToolsLoading: boolean;
+  handleSubagentToolToggle: (type: SubagentType, toolName: string) => void;
+  handleSelectAllSubagentTools: (type: SubagentType) => void;
+  handleDeselectAllSubagentTools: (type: SubagentType) => void;
 
   // Tools
   tools: ToolInfo[];
@@ -120,6 +138,23 @@ export function usePrepareTestsState(): UsePrepareTestsStateReturn {
   );
   const [transAgentToolsLoading, setTransAgentToolsLoading] = useState(false);
 
+  // Subagent Prompts (Task tool)
+  const [subagentPrompts, setSubagentPrompts] = useState<Record<SubagentType, SubagentPromptConfig>>(
+    {} as Record<SubagentType, SubagentPromptConfig>
+  );
+  const [defaultSubagentPrompts, setDefaultSubagentPrompts] = useState<Record<SubagentType, string>>(
+    {} as Record<SubagentType, string>
+  );
+
+  // Subagent Tools (Task tool)
+  const [subagentTools, setSubagentTools] = useState<Record<SubagentType, string[]>>(
+    {} as Record<SubagentType, string[]>
+  );
+  const [subagentEnabledTools, setSubagentEnabledTools] = useState<Record<SubagentType, Set<string>>>(
+    {} as Record<SubagentType, Set<string>>
+  );
+  const [subagentToolsLoading, setSubagentToolsLoading] = useState(false);
+
   // Narzędzia
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [enabledTools, setEnabledTools] = useState<Set<string>>(new Set());
@@ -195,6 +230,57 @@ export function usePrepareTestsState(): UsePrepareTestsStateReturn {
     setTransAgentToolsLoading(false);
   };
 
+  /**
+   * Ładuje domyślne prompty dla wszystkich subagentów (Task tool)
+   */
+  const loadDefaultSubagentPrompts = async () => {
+    const defaults: Record<SubagentType, string> = {} as Record<SubagentType, string>;
+
+    for (const type of SUBAGENT_TYPES) {
+      try {
+        const response = await api.getSubagentPrompt(type);
+        defaults[type] = response.prompt;
+      } catch (e) {
+        console.warn(`[usePrepareTestsState] Failed to load subagent prompt for ${type}:`, e);
+        defaults[type] = '';
+      }
+    }
+
+    setDefaultSubagentPrompts(defaults);
+    // Zainicjuj subagentPrompts z domyślnymi wartościami
+    const initial: Record<SubagentType, SubagentPromptConfig> = {} as Record<SubagentType, SubagentPromptConfig>;
+    for (const type of SUBAGENT_TYPES) {
+      initial[type] = { prompt: defaults[type] };
+    }
+    setSubagentPrompts(initial);
+  };
+
+  /**
+   * Ładuje narzędzia dla wszystkich subagentów (Task tool)
+   */
+  const loadSubagentTools = async () => {
+    setSubagentToolsLoading(true);
+    const toolsMap: Record<SubagentType, string[]> = {} as Record<SubagentType, string[]>;
+    const enabledMap: Record<SubagentType, Set<string>> = {} as Record<SubagentType, Set<string>>;
+
+    for (const type of SUBAGENT_TYPES) {
+      try {
+        const response = await api.getSubagentTools(type);
+        toolsMap[type] = response.tools;
+        // Domyślnie wszystkie narzędzia włączone
+        enabledMap[type] = new Set(response.tools);
+      } catch (e) {
+        console.warn(`[usePrepareTestsState] Failed to load subagent tools for ${type}:`, e);
+        toolsMap[type] = [];
+        enabledMap[type] = new Set();
+      }
+    }
+
+    setSubagentTools(toolsMap);
+    setSubagentEnabledTools(enabledMap);
+    setSubagentToolsLoading(false);
+  };
+
   // INICJALIZACJA - uruchamia się RAZ przy mount
   useEffect(() => {
     const initialize = async () => {
@@ -262,10 +348,12 @@ export function usePrepareTestsState(): UsePrepareTestsStateReturn {
             .filter((p): p is string => p !== undefined);
           setSelectedScenarios(new Set(validPaths));
 
-          // Ładowanie domyślnych promptów i narzędzi trans agentów
+          // Ładowanie domyślnych promptów i narzędzi trans agentów i subagentów
           await Promise.all([
             loadDefaultTransAgentPrompts(),
             loadTransAgentTools(),
+            loadDefaultSubagentPrompts(),
+            loadSubagentTools(),
           ]);
 
           // Nadpisz custom promptami z configSnapshot (rerun)
@@ -309,10 +397,12 @@ export function usePrepareTestsState(): UsePrepareTestsStateReturn {
           setScenarios(filteredScenarios);
           setSelectedScenarios(new Set(filteredScenarios.map(s => s.path)));
 
-          // Ładowanie domyślnych promptów i narzędzi trans agentów
+          // Ładowanie domyślnych promptów i narzędzi trans agentów i subagentów
           await Promise.all([
             loadDefaultTransAgentPrompts(),
             loadTransAgentTools(),
+            loadDefaultSubagentPrompts(),
+            loadSubagentTools(),
           ]);
         }
       } catch (e) {
@@ -496,6 +586,49 @@ export function usePrepareTestsState(): UsePrepareTestsStateReturn {
     }));
   };
 
+  const handleSetSubagentPrompt = (type: SubagentType, config: SubagentPromptConfig) => {
+    setSubagentPrompts(prev => ({
+      ...prev,
+      [type]: config,
+    }));
+  };
+
+  const handleResetSubagentPrompt = (type: SubagentType) => {
+    const defaultValue = defaultSubagentPrompts[type] || '';
+    setSubagentPrompts(prev => ({
+      ...prev,
+      [type]: { prompt: defaultValue },
+    }));
+  };
+
+  const handleSubagentToolToggle = (type: SubagentType, toolName: string) => {
+    setSubagentEnabledTools(prev => {
+      const current = prev[type] || new Set<string>();
+      const next = new Set(current);
+      if (next.has(toolName)) {
+        next.delete(toolName);
+      } else {
+        next.add(toolName);
+      }
+      return { ...prev, [type]: next };
+    });
+  };
+
+  const handleSelectAllSubagentTools = (type: SubagentType) => {
+    const allTools = subagentTools[type] || [];
+    setSubagentEnabledTools(prev => ({
+      ...prev,
+      [type]: new Set(allTools),
+    }));
+  };
+
+  const handleDeselectAllSubagentTools = (type: SubagentType) => {
+    setSubagentEnabledTools(prev => ({
+      ...prev,
+      [type]: new Set(),
+    }));
+  };
+
   const handleOpenToolEdit = (tool: ToolInfo) => {
     setEditingTool(tool);
     setEditingDescription(toolDescriptions[tool.name] || tool.description);
@@ -625,6 +758,31 @@ export function usePrepareTestsState(): UsePrepareTestsStateReturn {
         console.log('[PrepareTests] Sending transAgentEnabledTools:', modifiedTransAgentEnabledTools);
       }
 
+      // Dodaj custom konfigurację subagentów (Task tool) jeśli różnią się od domyślnych
+      const modifiedSubagentPrompts: Record<string, SubagentPromptConfig> = {};
+      for (const type of SUBAGENT_TYPES) {
+        const config = subagentPrompts[type];
+        const defaultVal = defaultSubagentPrompts[type] || '';
+        const enabledToolsSet = subagentEnabledTools[type] || new Set<string>();
+        const allTools = subagentTools[type] || [];
+
+        // Sprawdź czy prompt jest zmodyfikowany
+        const isPromptModified = config && config.prompt !== defaultVal;
+        // Sprawdź czy tools są zmodyfikowane (nie wszystkie włączone)
+        const isToolsModified = enabledToolsSet.size !== allTools.length;
+
+        if (isPromptModified || isToolsModified) {
+          modifiedSubagentPrompts[type] = {
+            prompt: isPromptModified ? config.prompt : undefined,
+            tools: isToolsModified ? Array.from(enabledToolsSet) : undefined,
+          };
+        }
+      }
+      if (Object.keys(modifiedSubagentPrompts).length > 0) {
+        params.subagentPrompts = modifiedSubagentPrompts;
+        console.log('[PrepareTests] Sending subagentPrompts:', Object.keys(modifiedSubagentPrompts));
+      }
+
       const { suiteId } = await api.runSuite(params);
       navigate(`/results/${suiteId}`);
     } catch (e) {
@@ -673,6 +831,20 @@ export function usePrepareTestsState(): UsePrepareTestsStateReturn {
     handleTransAgentToolToggle,
     handleSelectAllTransAgentTools,
     handleDeselectAllTransAgentTools,
+
+    // Subagent Prompts (Task tool)
+    subagentPrompts,
+    defaultSubagentPrompts,
+    setSubagentPrompt: handleSetSubagentPrompt,
+    resetSubagentPrompt: handleResetSubagentPrompt,
+
+    // Subagent Tools (Task tool)
+    subagentTools,
+    subagentEnabledTools,
+    subagentToolsLoading,
+    handleSubagentToolToggle,
+    handleSelectAllSubagentTools,
+    handleDeselectAllSubagentTools,
 
     // Tools
     tools,

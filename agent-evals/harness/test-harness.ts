@@ -23,6 +23,7 @@ import type {
   RawMessage,
   SystemPromptConfig,
   TransAgentPromptConfig,
+  SubagentPromptConfig,
 } from '../types/scenario';
 
 // ============================================================================
@@ -75,6 +76,11 @@ export interface TestHarnessOptions {
   transAgentPrompts?: Record<string, TransAgentPromptConfig>;
   /** Włączone narzędzia dla trans agentów (klucz = typ trans agenta, wartość = lista nazw narzędzi) */
   transAgentEnabledTools?: Record<string, string[]>;
+  /**
+   * Custom konfiguracja subagentów (Task tool)
+   * Klucz = typ subagenta (np. 'chapter-explorator', 'web-researcher', 'script-segments-editor')
+   */
+  subagentPrompts?: Record<string, SubagentPromptConfig>;
 
   // === OPCJE ZAPISU DO BAZY DANYCH ===
 
@@ -122,6 +128,38 @@ export interface ITestableAgent {
 }
 
 // ============================================================================
+// HELPER: Extract SDK built-in tool calls from messages
+// ============================================================================
+
+/**
+ * Wyciąga wywołania narzędzi SDK (Task, TodoWrite, WebSearch, WebFetch, etc.)
+ * z wiadomości agenta. SDK tools nie przechodzą przez toolWrapper/tracker,
+ * więc muszą być wyciągnięte bezpośrednio z bloków tool_use w messages.
+ */
+function extractToolCallsFromMessages(messages: RawMessage[]): ToolCall[] {
+  const toolCalls: ToolCall[] = [];
+
+  for (const msg of messages) {
+    if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if (block.type === 'tool_use') {
+          toolCalls.push({
+            toolName: block.name as string,
+            input: block.input as Record<string, unknown>,
+            output: undefined, // SDK tools nie mają output w tym samym bloku
+            timestamp: msg.timestamp,
+            order: toolCalls.length,
+            durationMs: 0,
+          });
+        }
+      }
+    }
+  }
+
+  return toolCalls;
+}
+
+// ============================================================================
 // TEST HARNESS
 // ============================================================================
 
@@ -131,7 +169,7 @@ type RequiredHarnessOptions = Required<Pick<TestHarnessOptions,
 >> & Pick<TestHarnessOptions,
   'saveResults' | 'tags' | 'label' | 'configSnapshot' | 'onMessage' | 'defaultSystemPrompt' |
   'model' | 'thinkingMode' | 'enabledTools' | 'disabledTools' | 'toolDescriptions' | 'toolParameterDescriptions' |
-  'transAgentPrompts' | 'transAgentEnabledTools'
+  'transAgentPrompts' | 'transAgentEnabledTools' | 'subagentPrompts'
 >;
 
 export class AgentTestHarness {
@@ -159,6 +197,7 @@ export class AgentTestHarness {
       toolParameterDescriptions: options.toolParameterDescriptions,
       transAgentPrompts: options.transAgentPrompts,
       transAgentEnabledTools: options.transAgentEnabledTools,
+      subagentPrompts: options.subagentPrompts,
       // Opcje bazy danych
       saveResults: options.saveResults,
       tags: options.tags,
@@ -228,6 +267,7 @@ export class AgentTestHarness {
           toolParameterDescriptions: this.options.toolParameterDescriptions,
           transAgentPrompts: this.options.transAgentPrompts,
           transAgentEnabledTools: this.options.transAgentEnabledTools,
+          subagentPrompts: this.options.subagentPrompts,
         }
       );
 
@@ -257,7 +297,18 @@ export class AgentTestHarness {
 
       // 6. Zbierz wyniki
       const afterSnapshot = this.storage.getSnapshot();
-      const toolCalls = tracker.getCalls();
+
+      // Zbierz tool calls z OBU źródeł:
+      // 1. MCP tools z tracker (mają pełne input/output/timing)
+      // 2. SDK built-in tools z messages (tylko tool_use blocks - Task, TodoWrite, WebSearch, etc.)
+      const mcpToolCalls = tracker.getCalls();
+      const sdkToolCalls = extractToolCallsFromMessages(agentResult.messages);
+
+      // Połącz, ale unikaj duplikatów (MCP tools mogą być w obu źródłach)
+      const mcpToolNames = new Set(mcpToolCalls.map(c => c.toolName));
+      const uniqueSdkCalls = sdkToolCalls.filter(c => !mcpToolNames.has(c.toolName));
+      const toolCalls = [...mcpToolCalls, ...uniqueSdkCalls];
+
       const dataDiff = this.storage.diff(beforeSnapshot, afterSnapshot);
 
       // 7. Wywołaj callback dla każdego tool call
@@ -342,11 +393,15 @@ export class AgentTestHarness {
 
       this.log(`Scenario ${scenario.name}: ERROR - ${errorMessage}`);
 
-      // Zbierz partial tool calls (jeśli tracker istnieje)
-      const partialToolCalls = tracker?.getCalls() || [];
-
       // Zbierz partial messages (jeśli agent istnieje)
       const partialMessages = agent?.getCollectedMessages() || [];
+
+      // Zbierz partial tool calls z OBU źródeł (jak w happy path)
+      const mcpToolCalls = tracker?.getCalls() || [];
+      const sdkToolCalls = extractToolCallsFromMessages(partialMessages);
+      const mcpToolNames = new Set(mcpToolCalls.map(c => c.toolName));
+      const uniqueSdkCalls = sdkToolCalls.filter(c => !mcpToolNames.has(c.toolName));
+      const partialToolCalls = [...mcpToolCalls, ...uniqueSdkCalls];
 
       // Zbierz partial stderr logs (jeśli agent istnieje)
       const partialStderrLogs = agent?.getCollectedStderrLogs() || [];

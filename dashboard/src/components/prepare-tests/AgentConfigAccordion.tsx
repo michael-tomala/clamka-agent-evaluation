@@ -33,6 +33,8 @@ export interface AgentConfigAccordionProps {
   enabledTools: Set<string>;
   isModified: boolean;
   defaultExpanded?: boolean;
+  /** Ukryj selektor trybu (append/replace) - dla subagentów które nie mają tego trybu */
+  hideModeSelector?: boolean;
   onPromptChange: (prompt: string) => void;
   onModeChange: (mode: SystemPromptMode) => void;
   onToolToggle: (toolName: string) => void;
@@ -50,6 +52,7 @@ export function AgentConfigAccordion({
   enabledTools,
   isModified,
   defaultExpanded = false,
+  hideModeSelector = false,
   onPromptChange,
   onModeChange,
   onToolToggle,
@@ -118,25 +121,34 @@ export function AgentConfigAccordion({
               variant="outlined"
               size="small"
             />
-            <FormControl sx={{ mt: 1.5, minWidth: 300 }} size="small">
-              <InputLabel>Tryb</InputLabel>
-              <Select
-                value={mode}
-                label="Tryb"
-                onChange={(e) => onModeChange(e.target.value as SystemPromptMode)}
-              >
-                <MenuItem value="append">
-                  Append - dodaj do domyślnego
-                </MenuItem>
-                <MenuItem value="replace">
-                  Replace - zastąp domyślny
-                </MenuItem>
-              </Select>
-            </FormControl>
-            {mode === 'replace' && (
-              <Alert severity="info" sx={{ mt: 1 }}>
-                Tryb Replace całkowicie zastępuje domyślny prompt agenta.
-              </Alert>
+            {!hideModeSelector && (
+              <>
+                <FormControl sx={{ mt: 1.5, minWidth: 300 }} size="small">
+                  <InputLabel>Tryb</InputLabel>
+                  <Select
+                    value={mode}
+                    label="Tryb"
+                    onChange={(e) => onModeChange(e.target.value as SystemPromptMode)}
+                  >
+                    <MenuItem value="append">
+                      Append - dodaj do domyślnego
+                    </MenuItem>
+                    <MenuItem value="replace">
+                      Replace - zastąp domyślny
+                    </MenuItem>
+                  </Select>
+                </FormControl>
+                {mode === 'replace' && (
+                  <Alert severity="info" sx={{ mt: 1 }}>
+                    Tryb Replace całkowicie zastępuje domyślny prompt agenta.
+                  </Alert>
+                )}
+              </>
+            )}
+            {hideModeSelector && (
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+                Subagenty używają pełnego promptu (brak trybu append/replace).
+              </Typography>
             )}
           </Box>
 

@@ -7,7 +7,7 @@ import path from 'path';
 import fs from 'fs';
 import { getTestRunnerService } from '../services/test-runner';
 import { getResultsStore } from '../services/results-store';
-import type { TestScenario, SystemPromptConfig, TransAgentPromptConfig } from '../../agent-evals/types/scenario';
+import type { TestScenario, SystemPromptConfig, TransAgentPromptConfig, SubagentPromptConfig } from '../../agent-evals/types/scenario';
 
 // Ścieżka do głównego katalogu projektu (relatywna do __dirname)
 // testing/api/routes/ -> ../../../ -> główny katalog projektu
@@ -218,6 +218,7 @@ export default async function scenariosRoutes(
       toolParameterDescriptions?: Record<string, Record<string, string>>;
       transAgentPrompts?: Record<string, TransAgentPromptConfig>;
       transAgentEnabledTools?: Record<string, string[]>;
+      subagentPrompts?: Record<string, SubagentPromptConfig>;
     };
   }>('/scenarios/run-suite', async (request, reply) => {
     const {
@@ -234,6 +235,7 @@ export default async function scenariosRoutes(
       toolParameterDescriptions,
       transAgentPrompts,
       transAgentEnabledTools,
+      subagentPrompts,
     } = request.body || {};
 
     // Diagnostyka - do usunięcia po zdiagnozowaniu problemu
@@ -296,6 +298,7 @@ export default async function scenariosRoutes(
         toolParameterDescriptions,
         transAgentPrompts,
         transAgentEnabledTools,
+        subagentPrompts,
       },
     });
 
@@ -313,6 +316,7 @@ export default async function scenariosRoutes(
         toolParameterDescriptions,
         transAgentPrompts,
         transAgentEnabledTools,
+        subagentPrompts,
       },
       suiteRun.id,
       jobId

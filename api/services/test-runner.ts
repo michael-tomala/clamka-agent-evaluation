@@ -9,7 +9,7 @@ import { getRedisConnection } from '../config/redis';
 import { AgentTestHarness, summarizeResults } from '../../agent-evals/harness/test-harness';
 import { getResultsStore } from './results-store';
 import { initializeElectronEnvWithPath } from '../../../electron/utils/electronEnv';
-import type { TestScenario, TestResult, ToolCall, RawMessage, SystemPromptConfig, TransAgentPromptConfig } from '../../agent-evals/types/scenario';
+import type { TestScenario, TestResult, ToolCall, RawMessage, SystemPromptConfig, TransAgentPromptConfig, SubagentPromptConfig } from '../../agent-evals/types/scenario';
 
 // ============================================================================
 // TYPES
@@ -41,6 +41,8 @@ export interface TestJob {
     transAgentPrompts?: Record<string, TransAgentPromptConfig>;
     /** Włączone narzędzia dla trans agentów (klucz = typ, wartość = lista nazw narzędzi) */
     transAgentEnabledTools?: Record<string, string[]>;
+    /** Custom konfiguracja subagentów (Task tool) */
+    subagentPrompts?: Record<string, SubagentPromptConfig>;
   };
 }
 
@@ -153,6 +155,7 @@ export class TestRunnerService extends EventEmitter {
                 : 'default',
               transAgentPrompts: job.data.options?.transAgentPrompts,
               transAgentEnabledTools: job.data.options?.transAgentEnabledTools,
+              subagentPrompts: job.data.options?.subagentPrompts,
             },
           });
           console.log(`[TestRunner] Results saved: ${suiteRun.id}`);
@@ -219,6 +222,7 @@ export class TestRunnerService extends EventEmitter {
       toolParameterDescriptions?: Record<string, Record<string, string>>;
       transAgentPrompts?: Record<string, TransAgentPromptConfig>;
       transAgentEnabledTools?: Record<string, string[]>;
+      subagentPrompts?: Record<string, SubagentPromptConfig>;
     },
     suiteId?: string,
     existingJobId?: string
@@ -350,6 +354,7 @@ export class TestRunnerService extends EventEmitter {
       toolParameterDescriptions: options?.toolParameterDescriptions,
       transAgentPrompts: options?.transAgentPrompts,
       transAgentEnabledTools: options?.transAgentEnabledTools,
+      subagentPrompts: options?.subagentPrompts,
       onToolCall: (toolCall) => {
         allToolCalls.push(toolCall);
         this.emit('event', {

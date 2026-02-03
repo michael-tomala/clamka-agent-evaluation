@@ -1,12 +1,20 @@
 import { Paper, Typography, Box } from '@mui/material';
-import { ToolInfo, TransAgentPromptConfig } from '../../api/client';
+import { ToolInfo, TransAgentPromptConfig, SubagentPromptConfig } from '../../api/client';
 import { SystemPromptMode } from '../../pages/prepareTestsTypes';
-import type { TransAgentType } from '../../hooks/usePrepareTestsState';
+import type { TransAgentType, SubagentType } from '../../hooks/usePrepareTestsState';
 import { AgentConfigAccordion } from './AgentConfigAccordion';
 
 /** Mapowanie typów trans agentów na nazwy wyświetlane */
 const TRANS_AGENT_LABELS: Record<TransAgentType, string> = {
   'media-scout': 'Media Scout (Trans Agent)',
+};
+
+/** Mapowanie typów subagentów na nazwy wyświetlane */
+const SUBAGENT_LABELS: Record<SubagentType, string> = {
+  'chapter-explorator': 'Chapter Explorator (Subagent)',
+  'web-researcher': 'Web Researcher (Subagent)',
+  'script-segments-editor': 'Script Segments Editor (Subagent)',
+  'executor': 'Executor (Subagent)',
 };
 
 export interface AgentsConfigSectionProps {
@@ -34,6 +42,18 @@ export interface AgentsConfigSectionProps {
   onTransAgentSelectAllTools: (type: TransAgentType) => void;
   onTransAgentDeselectAllTools: (type: TransAgentType) => void;
   onTransAgentReset: (type: TransAgentType) => void;
+
+  // Subagenty (Task tool)
+  subagentTypes: SubagentType[];
+  subagentPrompts: Record<SubagentType, SubagentPromptConfig>;
+  defaultSubagentPrompts: Record<SubagentType, string>;
+  subagentTools: Record<SubagentType, string[]>;
+  subagentEnabledTools: Record<SubagentType, Set<string>>;
+  onSubagentPromptChange: (type: SubagentType, prompt: string) => void;
+  onSubagentToolToggle: (type: SubagentType, toolName: string) => void;
+  onSubagentSelectAllTools: (type: SubagentType) => void;
+  onSubagentDeselectAllTools: (type: SubagentType) => void;
+  onSubagentReset: (type: SubagentType) => void;
 }
 
 export function AgentsConfigSection({
@@ -61,6 +81,18 @@ export function AgentsConfigSection({
   onTransAgentSelectAllTools,
   onTransAgentDeselectAllTools,
   onTransAgentReset,
+
+  // Subagenty (Task tool)
+  subagentTypes,
+  subagentPrompts,
+  defaultSubagentPrompts,
+  subagentTools,
+  subagentEnabledTools,
+  onSubagentPromptChange,
+  onSubagentToolToggle,
+  onSubagentSelectAllTools,
+  onSubagentDeselectAllTools,
+  onSubagentReset,
 }: AgentsConfigSectionProps) {
   // Sprawdź modyfikacje głównego agenta
   const mainAgentToolNames = mainAgentTools.map(t => t.name);
@@ -127,6 +159,40 @@ export function AgentsConfigSection({
             onSelectAllTools={() => onTransAgentSelectAllTools(type)}
             onDeselectAllTools={() => onTransAgentDeselectAllTools(type)}
             onReset={() => onTransAgentReset(type)}
+          />
+        );
+      })}
+
+      {/* Subagenty (Task tool) - NIE mają trybu append/replace, tylko pełny prompt */}
+      {subagentTypes.map((type) => {
+        const config = subagentPrompts[type] || { prompt: '' };
+        const defaultPrompt = defaultSubagentPrompts[type] || '';
+        const tools = subagentTools[type] || [];
+        const enabled = subagentEnabledTools[type] || new Set<string>();
+
+        const isToolsModified = enabled.size !== tools.length;
+        const isPromptModified = config.prompt !== defaultPrompt;
+        const isModified = isToolsModified || isPromptModified;
+
+        const currentPrompt = config.prompt || '';
+
+        return (
+          <AgentConfigAccordion
+            key={type}
+            label={SUBAGENT_LABELS[type] || type}
+            prompt={currentPrompt}
+            defaultPrompt={defaultPrompt}
+            mode="replace" // Subagenty nie mają trybu append - zawsze replace
+            tools={tools}
+            enabledTools={enabled}
+            isModified={isModified}
+            hideModeSelector // Ukryj selektor trybu dla subagentów
+            onPromptChange={(prompt) => onSubagentPromptChange(type, prompt)}
+            onModeChange={() => {}} // No-op - subagenty nie mają trybu
+            onToolToggle={(toolName) => onSubagentToolToggle(type, toolName)}
+            onSelectAllTools={() => onSubagentSelectAllTools(type)}
+            onDeselectAllTools={() => onSubagentDeselectAllTools(type)}
+            onReset={() => onSubagentReset(type)}
           />
         );
       })}

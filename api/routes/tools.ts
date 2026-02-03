@@ -13,6 +13,11 @@ import {
   SCRIPT_ALLOWED_TOOLS,
   MEDIA_SCOUT_TRANSAGENT_ALLOWED_TOOLS,
 } from '../../../shared/prompts/agents/allowed-tools';
+import {
+  EXPLORATOR_TOOLS,
+  SCRIPT_SEGMENTS_EDITOR_TOOLS,
+  SHARED_SUBAGENTS,
+} from '../../../electron/services/agents/shared-subagents';
 import type { McpServerContext } from '../../../electron/services/mcp/types';
 import type { ToolParameter } from '../../../shared/types/agentPrompt';
 
@@ -50,6 +55,17 @@ interface TransAgentPromptResponse {
 
 interface TransAgentToolsResponse {
   transAgentType: string;
+  tools: string[];
+}
+
+interface SubagentPromptResponse {
+  subagentType: string;
+  prompt: string;
+  source: string;
+}
+
+interface SubagentToolsResponse {
+  subagentType: string;
   tools: string[];
 }
 
@@ -251,6 +267,57 @@ function getTransAgentTools(transAgentType: string): TransAgentToolsResponse | n
   };
 }
 
+/**
+ * Lista dostępnych typów subagentów (Task tool)
+ */
+const VALID_SUBAGENT_TYPES = ['chapter-explorator', 'web-researcher', 'script-segments-editor'];
+
+/**
+ * Pobiera prompt subagenta z SHARED_SUBAGENTS lub pliku .md
+ */
+function getSubagentPrompt(subagentType: string): SubagentPromptResponse | null {
+  if (!VALID_SUBAGENT_TYPES.includes(subagentType)) {
+    return null;
+  }
+
+  const subagent = SHARED_SUBAGENTS[subagentType];
+  if (!subagent) {
+    return null;
+  }
+
+  return {
+    subagentType,
+    prompt: subagent.prompt, // getter wywoła odpowiednią funkcję ładującą z pliku .md
+    source: `shared/prompts/subagents/${subagentType}.md`,
+  };
+}
+
+/**
+ * Pobiera listę narzędzi dla subagenta (Task tool)
+ */
+function getSubagentTools(subagentType: string): SubagentToolsResponse | null {
+  const toolsMap: Record<string, string[]> = {
+    'chapter-explorator': EXPLORATOR_TOOLS,
+    'web-researcher': ['WebSearch', 'WebFetch'], // SDK builtin tools
+    'script-segments-editor': SCRIPT_SEGMENTS_EDITOR_TOOLS,
+  };
+
+  const tools = toolsMap[subagentType];
+  if (!tools) {
+    return null;
+  }
+
+  // Normalizuj nazwy - usuń prefiks mcp__clamka-mcp__
+  const normalizedTools = tools.map((t) =>
+    t.startsWith('mcp__clamka-mcp__') ? t.replace('mcp__clamka-mcp__', '') : t
+  );
+
+  return {
+    subagentType,
+    tools: normalizedTools,
+  };
+}
+
 // ============================================================================
 // ROUTES
 // ============================================================================
@@ -328,6 +395,38 @@ export default async function toolsRoutes(
 
     if (!toolsData) {
       return reply.status(404).send({ error: `Tools for trans agent '${type}' not found` });
+    }
+
+    return reply.send(toolsData);
+  });
+
+  /**
+   * GET /api/prompts/subagent/:type - domyślny prompt subagenta (Task tool)
+   *
+   * Zwraca prompt systemowy dla subagenta (chapter-explorator, web-researcher, script-segments-editor).
+   */
+  fastify.get<{ Params: { type: string } }>('/prompts/subagent/:type', async (request, reply) => {
+    const { type } = request.params;
+    const promptData = getSubagentPrompt(type);
+
+    if (!promptData) {
+      return reply.status(404).send({ error: `Prompt for subagent '${type}' not found` });
+    }
+
+    return reply.send(promptData);
+  });
+
+  /**
+   * GET /api/tools/subagent/:type - lista narzędzi dla subagenta (Task tool)
+   *
+   * Zwraca listę nazw narzędzi dozwolonych dla danego typu subagenta.
+   */
+  fastify.get<{ Params: { type: string } }>('/tools/subagent/:type', async (request, reply) => {
+    const { type } = request.params;
+    const toolsData = getSubagentTools(type);
+
+    if (!toolsData) {
+      return reply.status(404).send({ error: `Tools for subagent '${type}' not found` });
     }
 
     return reply.send(toolsData);

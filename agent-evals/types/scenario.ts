@@ -233,6 +233,21 @@ export interface TransAgentPromptConfig {
   mode?: 'append' | 'replace';
 }
 
+/**
+ * Konfiguracja subagenta (Task tool) dla testów
+ *
+ * Subagenty (chapter-explorator, web-researcher, script-segments-editor)
+ * NIE mają trybu append/replace - tylko pełny prompt.
+ */
+export interface SubagentPromptConfig {
+  /** Pełny tekst promptu (nadpisuje domyślny z pliku .md) */
+  prompt?: string;
+  /** Lista dozwolonych narzędzi (nadpisuje domyślne) */
+  tools?: string[];
+  /** Override modelu dla subagenta */
+  model?: 'sonnet' | 'opus' | 'haiku';
+}
+
 export interface TestScenario {
   /** Unikalny identyfikator scenariusza */
   id: string;

@@ -25,7 +25,7 @@ import { getToolDefinitionsForAgent } from './tool-definitions-provider';
 import type { ITestableAgent } from './test-harness';
 import type { ChatMessage, Project, Chapter } from '../../../shared/types';
 import type { ToolWrapper, TransAgentPromptConfig } from '../../../electron/services/mcp/types';
-import type { SystemPromptConfig, RawMessage, ContentBlock, ScenarioInputContext } from '../types/scenario';
+import type { SystemPromptConfig, RawMessage, ContentBlock, ScenarioInputContext, SubagentPromptConfig } from '../types/scenario';
 
 export type AgentType = 'montage' | 'script';
 
@@ -56,6 +56,11 @@ export interface TestableAgentToolsConfig {
   transAgentPrompts?: Record<string, TransAgentPromptConfig>;
   /** Włączone narzędzia dla trans agentów (klucz = typ trans agenta, wartość = lista nazw narzędzi) */
   transAgentEnabledTools?: Record<string, string[]>;
+  /**
+   * Custom konfiguracja subagentów (Task tool)
+   * Klucz = typ subagenta (np. 'chapter-explorator', 'web-researcher', 'script-segments-editor')
+   */
+  subagentPrompts?: Record<string, SubagentPromptConfig>;
 }
 
 /**
@@ -282,13 +287,23 @@ export class TestableAgentAdapter implements ITestableAgent {
     // Jeśli podano disabledTools, pobierz wszystkie dozwolone dla agenta i odejmij wyłączone
     if (disabledTools && disabledTools.length > 0) {
       // Import dynamiczny żeby uniknąć circular dependency
-      const { MONTAGE_ALLOWED_TOOLS, SCRIPT_ALLOWED_TOOLS } = require('../../../shared/prompts/agents/allowed-tools');
+      const { MONTAGE_ALLOWED_TOOLS, SCRIPT_ALLOWED_TOOLS, isSdkBuiltinTool } = require('../../../shared/prompts/agents/allowed-tools');
       const allTools = this.agentType === 'montage' ? MONTAGE_ALLOWED_TOOLS : SCRIPT_ALLOWED_TOOLS;
 
-      // Wyciąg nazwy bez prefiksu mcp__clamka-mcp__
-      const allToolNames = allTools
-        .filter((t: string) => t.startsWith('mcp__clamka-mcp__'))
-        .map((t: string) => t.replace('mcp__clamka-mcp__', ''));
+      // Wyciąg nazwy - obsłuż zarówno MCP (z prefiksem) jak i SDK (bez prefiksu)
+      const allToolNames = allTools.map((t: string) => {
+        if (t.startsWith('mcp__clamka-mcp__')) {
+          return t.replace('mcp__clamka-mcp__', '');
+        }
+        if (t.startsWith('mcp__mcp-puppeteer__')) {
+          return t.replace('mcp__mcp-puppeteer__', '');
+        }
+        // SDK built-in tools (Task, TodoWrite, etc.) - bez prefiksu, zachowaj jak jest
+        if (isSdkBuiltinTool(t)) {
+          return t;
+        }
+        return t;
+      });
 
       const filteredTools = allToolNames.filter((t: string) => !disabledTools.includes(t));
       console.log(`[TestableAgentAdapter] Using ${filteredTools.length} tools (${disabledTools.length} disabled)`);
@@ -568,7 +583,8 @@ export class TestableAgentAdapter implements ITestableAgent {
         enabledToolsForAgent, // lista dozwolonych narzędzi (dla testów)
         stderrCallback, // callback dla logów stderr z Claude CLI
         this.toolsConfig?.transAgentPrompts, // custom prompty dla trans agentów
-        this.toolsConfig?.transAgentEnabledTools // włączone narzędzia dla trans agentów
+        this.toolsConfig?.transAgentEnabledTools, // włączone narzędzia dla trans agentów
+        this.toolsConfig?.subagentPrompts // custom konfiguracja subagentów (Task tool)
       );
     } else {
       const scriptAgent = this.agent as ScriptAgentService;
@@ -591,7 +607,8 @@ export class TestableAgentAdapter implements ITestableAgent {
         enabledToolsForAgent, // lista dozwolonych narzędzi (dla testów)
         stderrCallback, // callback dla logów stderr z Claude CLI
         this.toolsConfig?.transAgentPrompts, // custom prompty dla trans agentów
-        this.toolsConfig?.transAgentEnabledTools // włączone narzędzia dla trans agentów
+        this.toolsConfig?.transAgentEnabledTools, // włączone narzędzia dla trans agentów
+        this.toolsConfig?.subagentPrompts // custom konfiguracja subagentów (Task tool)
       );
     }
 

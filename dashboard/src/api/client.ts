@@ -109,6 +109,8 @@ export interface ConfigSnapshot {
   transAgentPrompts?: Record<string, { raw?: string; mode?: 'append' | 'replace' }>;
   /** Włączone narzędzia dla trans agentów (klucz = typ trans agenta, wartość = lista nazw narzędzi) */
   transAgentEnabledTools?: Record<string, string[]>;
+  /** Custom konfiguracja subagentów (Task tool) */
+  subagentPrompts?: Record<string, SubagentPromptConfig>;
 }
 
 export type SuiteStatus = 'pending' | 'running' | 'completed' | 'failed' | 'stopped';
@@ -181,6 +183,8 @@ export interface RunSuiteParams {
   transAgentPrompts?: Record<string, TransAgentPromptConfig>;
   /** Włączone narzędzia dla trans agentów (klucz = typ trans agenta, wartość = lista nazw narzędzi) */
   transAgentEnabledTools?: Record<string, string[]>;
+  /** Custom konfiguracja subagentów (Task tool) */
+  subagentPrompts?: Record<string, SubagentPromptConfig>;
 }
 
 export interface AgentPromptResponse {
@@ -204,6 +208,27 @@ export interface TransAgentToolsResponse {
 export interface TransAgentPromptConfig {
   raw?: string;
   mode?: 'append' | 'replace';
+}
+
+/** Konfiguracja subagenta (Task tool) dla testów */
+export interface SubagentPromptConfig {
+  /** Pełny tekst promptu (nadpisuje domyślny z pliku .md) */
+  prompt?: string;
+  /** Lista dozwolonych narzędzi (nadpisuje domyślne) */
+  tools?: string[];
+  /** Override modelu dla subagenta */
+  model?: 'sonnet' | 'opus' | 'haiku';
+}
+
+export interface SubagentPromptResponse {
+  subagentType: string;
+  prompt: string;
+  source: string;
+}
+
+export interface SubagentToolsResponse {
+  subagentType: string;
+  tools: string[];
 }
 
 // ============================================================================
@@ -535,6 +560,12 @@ export const api = {
 
   getTransAgentTools: (transAgentType: string) =>
     fetchJson<TransAgentToolsResponse>(`/tools/transagent/${transAgentType}`),
+
+  getSubagentPrompt: (subagentType: string) =>
+    fetchJson<SubagentPromptResponse>(`/prompts/subagent/${subagentType}`),
+
+  getSubagentTools: (subagentType: string) =>
+    fetchJson<SubagentToolsResponse>(`/tools/subagent/${subagentType}`),
 
   // Jobs
   getJobStatus: (jobId: string) => fetchJson<JobStatus>(`/jobs/${jobId}`),

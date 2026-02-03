@@ -33,17 +33,7 @@ export const scenario: TestScenario = {
     'Agent analizuje transkrypcję wykładu i tworzy logiczny podział na chaptery',
 
   input: {
-    userMessage: `Przeanalizuj transkrypcję wykładu (asset: 02d10a4a-06f5-4288-af9e-a80c5e940372) i podziel go na rozdziały.
-
-Wykład trwa około 32 minuty i dotyczy czytania etykiet produktów przy insulinooporności.
-
-Zadanie:
-1. Przeanalizuj treść i zidentyfikuj główne sekcje tematyczne
-2. Zaproponuj podział na 4-6 chapterów
-3. Utwórz te chaptery używając narzędzia createChapters
-
-Każdy chapter powinien mieć opisowy tytuł po polsku.
-Użyj template "default" dla wszystkich chapterów.`,
+    userMessage: `Przeanalizuj transkrypcję rozdziału i zaproponuj podział na mniejsze rozdziały. Zlec to zadanie do agenta chapter-explorator'a.`,
 
     context: {
       projectId: 'b3407ed2-3d9d-4474-bf06-58db3f96340f', // Wykład: Czytanie etykiet przy insulinooporności
@@ -55,9 +45,7 @@ Użyj template "default" dla wszystkich chapterów.`,
     {
       toolCalls: {
         // Agent MUSI utworzyć chaptery
-        required: ['createChapters'],
-        // Opcjonalnie może użyć subagenta media-scout do pobrania transkrypcji
-        optional: ['Task'],
+        required: ['Task']
       },
     },
   ],
