@@ -503,10 +503,27 @@ class JsonProjectStorage implements IProjectStorage {
   }
 
   findAll(): Project[] {
-    return Array.from(this.projects.values());
+    // Filtruj soft-deleted projekty
+    return Array.from(this.projects.values()).filter((p) => !p.isDeleted);
   }
 
-  create(name: string, projectSettings?: Record<string, unknown>): Project {
+  findAllForUser(userId: string | null): Project[] {
+    // Ścisła izolacja projektów - spójna z ProjectRepository.findAllForUser()
+    // Filtruj soft-deleted projekty
+    if (userId === null) {
+      // Niezalogowany → tylko projekty bez właściciela
+      return Array.from(this.projects.values()).filter(
+        (p) => !p.isDeleted && (p.ownerId === null || p.ownerId === undefined)
+      );
+    } else {
+      // Zalogowany → tylko projekty tego użytkownika
+      return Array.from(this.projects.values()).filter(
+        (p) => !p.isDeleted && p.ownerId === userId
+      );
+    }
+  }
+
+  create(name: string, projectSettings?: Record<string, unknown>, ownerId?: string | null): Project {
     const id = uuidv4();
     const now = new Date().toISOString();
     const project: Project = {
@@ -514,6 +531,7 @@ class JsonProjectStorage implements IProjectStorage {
       name,
       createdDate: now,
       lastModified: now,
+      ownerId: ownerId ?? null,
       projectSettings: (projectSettings as Record<string, string>) || {},
     };
     this.projects.set(id, project);
@@ -534,9 +552,45 @@ class JsonProjectStorage implements IProjectStorage {
     }
   }
 
+  /**
+   * @deprecated Używaj softDelete() lub hardDelete()
+   */
   delete(id: string): void {
+    this.softDelete(id);
+  }
+
+  findDeleted(): Project[] {
+    return Array.from(this.projects.values()).filter((p) => p.isDeleted === true);
+  }
+
+  softDelete(id: string): void {
+    const project = this.projects.get(id);
+    if (project) {
+      project.isDeleted = true;
+      project.deletedAt = new Date().toISOString();
+      project.lastModified = new Date().toISOString();
+    }
+  }
+
+  hardDelete(id: string): void {
     this.projects.delete(id);
     this.settings.delete(id);
+  }
+
+  hardDeleteOlderThan(olderThan: string): number {
+    let count = 0;
+    const cutoffDate = new Date(olderThan);
+    for (const [id, project] of this.projects) {
+      if (project.isDeleted && project.deletedAt) {
+        const deletedDate = new Date(project.deletedAt);
+        if (deletedDate < cutoffDate) {
+          this.projects.delete(id);
+          this.settings.delete(id);
+          count++;
+        }
+      }
+    }
+    return count;
   }
 
   getSetting(projectId: string, key: string): string | null {

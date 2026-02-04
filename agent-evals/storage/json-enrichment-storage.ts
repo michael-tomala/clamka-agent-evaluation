@@ -246,6 +246,15 @@ export class JsonEnrichmentStorage implements IEnrichmentStorage {
     }
   }
 
+  updateTranscriptionPersonIdBySpeakerId(assetId: string, speakerId: string, personId: string): void {
+    for (const segment of this.transcriptionSegments.values()) {
+      if (segment.assetId === assetId && segment.speakerId === speakerId) {
+        segment.personId = personId;
+        segment.modifiedDate = new Date().toISOString();
+      }
+    }
+  }
+
   countTranscriptionByAssetId(assetId: string): number {
     return this.getTranscriptionByAssetId(assetId).length;
   }
@@ -355,7 +364,7 @@ export class JsonEnrichmentStorage implements IEnrichmentStorage {
   getScenesByAssetId(assetId: string): MediaAssetScene[] {
     return Array.from(this.scenes.values())
       .filter((s) => s.mediaAssetId === assetId)
-      .sort((a, b) => a.startFrame - b.startFrame);
+      .sort((a, b) => a.orderIndex - b.orderIndex);
   }
 
   createScene(input: CreateMediaAssetSceneInput): MediaAssetScene {
@@ -364,13 +373,11 @@ export class JsonEnrichmentStorage implements IEnrichmentStorage {
     const scene: MediaAssetScene = {
       id,
       mediaAssetId: input.mediaAssetId,
-      sceneIndex: input.sceneIndex,
-      startFrame: input.startFrame,
-      endFrame: input.endFrame,
-      keyFramePath: input.keyFramePath ?? null,
-      description: input.description ?? null,
+      fileRelativeStartFrame: input.fileRelativeStartFrame,
+      fileRelativeEndFrame: input.fileRelativeEndFrame,
+      orderIndex: input.orderIndex,
+      description: null,
       createdDate: now,
-      modifiedDate: now,
     };
 
     this.scenes.set(id, scene);
@@ -382,11 +389,7 @@ export class JsonEnrichmentStorage implements IEnrichmentStorage {
     scenesInput: Omit<CreateMediaAssetSceneInput, 'mediaAssetId'>[]
   ): MediaAssetScene[] {
     // Usuń istniejące
-    for (const [id, scene] of this.scenes.entries()) {
-      if (scene.mediaAssetId === assetId) {
-        this.scenes.delete(id);
-      }
-    }
+    this.deleteScenesByAssetId(assetId);
 
     // Dodaj nowe
     return scenesInput.map((sceneInput) =>
@@ -405,13 +408,16 @@ export class JsonEnrichmentStorage implements IEnrichmentStorage {
     }
   }
 
+  deleteSceneById(sceneId: string): void {
+    this.scenes.delete(sceneId);
+  }
+
   updateSceneFrames(sceneId: string, startFrame: number, endFrame: number): MediaAssetScene | null {
     const scene = this.scenes.get(sceneId);
     if (!scene) return null;
 
-    scene.startFrame = startFrame;
-    scene.endFrame = endFrame;
-    scene.modifiedDate = new Date().toISOString();
+    scene.fileRelativeStartFrame = startFrame;
+    scene.fileRelativeEndFrame = endFrame;
     return scene;
   }
 
@@ -419,7 +425,13 @@ export class JsonEnrichmentStorage implements IEnrichmentStorage {
     const scene = this.scenes.get(sceneId);
     if (scene) {
       scene.description = description;
-      scene.modifiedDate = new Date().toISOString();
+    }
+  }
+
+  updateSceneOrderIndex(sceneId: string, orderIndex: number): void {
+    const scene = this.scenes.get(sceneId);
+    if (scene) {
+      scene.orderIndex = orderIndex;
     }
   }
 

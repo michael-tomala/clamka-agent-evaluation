@@ -22,6 +22,7 @@ import { agentPromptService } from '../../../electron/services/base/AgentPromptS
 import { JsonStorage } from '../storage/json-storage';
 import { ToolTracker } from './tool-tracker';
 import { getToolDefinitionsForAgent } from './tool-definitions-provider';
+import { MemoryLogger, type LogEntry } from './memory-logger';
 import type { ITestableAgent } from './test-harness';
 import type { ChatMessage, Project, Chapter } from '../../../shared/types';
 import type { ToolWrapper, TransAgentPromptConfig } from '../../../electron/services/mcp/types';
@@ -97,6 +98,9 @@ export class TestableAgentAdapter implements ITestableAgent {
   private agentType: AgentType;
   private jsonStorage: JsonStorage;
   private tracker: ToolTracker;
+
+  // Memory logger dla zbierania logów agenta (zamiast fileLogger)
+  private memoryLogger: MemoryLogger;
 
   // Wrapper przekazywany do agenta - śledzi wszystkie tool calls z precyzyjnym timingiem
   private toolWrapper: ToolWrapper;
@@ -192,11 +196,14 @@ export class TestableAgentAdapter implements ITestableAgent {
     // 2. Utwórz toolWrapper do precyzyjnego śledzenia tool calls
     this.toolWrapper = this.createToolWrapper();
 
-    // 3. Utwórz agenta (używa registry z JsonStorage)
+    // 3. Utwórz MemoryLogger dla zbierania logów agenta
+    this.memoryLogger = new MemoryLogger();
+
+    // 4. Utwórz agenta z MemoryLogger (używa registry z JsonStorage)
     if (agentType === 'montage') {
-      this.agent = new MontageAgentService();
+      this.agent = new MontageAgentService(this.memoryLogger);
     } else {
-      this.agent = new ScriptAgentService();
+      this.agent = new ScriptAgentService(this.memoryLogger);
     }
   }
 
@@ -741,6 +748,42 @@ export class TestableAgentAdapter implements ITestableAgent {
   cancel(): void {
     this.cancelToken.cancelled = true;
     console.log('[TestableAgentAdapter] Agent cancelled');
+  }
+
+  /**
+   * Zwraca logi agenta jako tablicę stringów (do snapshotów)
+   * Format: [LEVEL] [source] message {data}
+   */
+  getAgentLogs(): string[] {
+    return this.memoryLogger.toStringArray();
+  }
+
+  /**
+   * Zwraca szczegółowe wpisy logów agenta
+   */
+  getLogEntries(): LogEntry[] {
+    return this.memoryLogger.getEntries();
+  }
+
+  /**
+   * Sprawdza czy agent zalogował jakiekolwiek błędy
+   */
+  hasAgentErrors(): boolean {
+    return this.memoryLogger.hasErrors();
+  }
+
+  /**
+   * Zwraca tylko błędy z logów agenta
+   */
+  getAgentErrors(): LogEntry[] {
+    return this.memoryLogger.getErrors();
+  }
+
+  /**
+   * Czyści logi agenta (np. między turnami testu)
+   */
+  clearAgentLogs(): void {
+    this.memoryLogger.clear();
   }
 
   /**
