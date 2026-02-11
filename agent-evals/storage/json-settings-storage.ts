@@ -5,7 +5,7 @@
  * Używana przez testing API zamiast SqliteSettingsStorage.
  */
 
-import type { ISettingsStorage } from '../../../shared/storage';
+import type { ISettingsStorage } from '../../../desktop-app/shared/storage';
 
 export class JsonSettingsStorage implements ISettingsStorage {
   private settings = new Map<string, string>();

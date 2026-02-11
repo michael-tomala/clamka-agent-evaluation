@@ -18,6 +18,7 @@ import {
   Settings as SettingsIcon,
   Storage as StorageIcon,
   Visibility as VisionIcon,
+  Brush as BrushIcon,
 } from '@mui/icons-material';
 
 import PrepareTests from './pages/PrepareTests';
@@ -27,6 +28,7 @@ import ResultDetail from './pages/ResultDetail';
 import ScenarioDetail from './pages/ScenarioDetail';
 import FixturesPreview from './pages/FixturesPreview';
 import ClaudeVisionScenes from './pages/ClaudeVisionScenes';
+import CompositionTests from './pages/CompositionTests';
 
 const DRAWER_WIDTH = 240;
 
@@ -36,6 +38,7 @@ const navItems = [
   { path: '/results', label: 'Historia', icon: <HistoryIcon /> },
   { path: '/fixtures', label: 'Fixtures', icon: <StorageIcon /> },
   { path: '/claude-vision', label: 'Claude Vision', icon: <VisionIcon /> },
+  { path: '/composition-tests', label: 'Kompozycje', icon: <BrushIcon /> },
 ];
 
 export default function App() {
@@ -123,6 +126,7 @@ export default function App() {
           <Route path="/results/:suiteId/scenario/:scenarioId" element={<ScenarioDetail />} />
           <Route path="/fixtures" element={<FixturesPreview />} />
           <Route path="/claude-vision" element={<ClaudeVisionScenes />} />
+          <Route path="/composition-tests" element={<CompositionTests />} />
         </Routes>
       </Box>
     </Box>

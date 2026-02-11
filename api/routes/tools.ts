@@ -6,20 +6,20 @@ import { FastifyInstance, FastifyPluginOptions } from 'fastify';
 import fs from 'fs';
 import path from 'path';
 import { z } from 'zod';
-import { getAllTools } from '../../../electron/services/mcp/tools/all-tools';
-import { zodSchemaToParams } from '../../../electron/services/mcp/tools/utils/zodToParams';
+import { getAllTools } from '../../../desktop-app/electron/services/mcp/tools/all-tools';
+import { zodSchemaToParams } from '../../../desktop-app/electron/services/mcp/tools/utils/zodToParams';
 import {
   MONTAGE_ALLOWED_TOOLS,
   SCRIPT_ALLOWED_TOOLS,
   MEDIA_SCOUT_TRANSAGENT_ALLOWED_TOOLS,
-} from '../../../shared/prompts/agents/allowed-tools';
+} from '../../../desktop-app/shared/prompts/agents/allowed-tools';
 import {
   EXPLORATOR_TOOLS,
   SCRIPT_SEGMENTS_EDITOR_TOOLS,
   SHARED_SUBAGENTS,
-} from '../../../electron/services/agents/shared-subagents';
-import type { McpServerContext } from '../../../electron/services/mcp/types';
-import type { ToolParameter } from '../../../shared/types/agentPrompt';
+} from '../../../desktop-app/electron/services/agents/shared-subagents';
+import type { McpServerContext } from '../../../desktop-app/electron/services/mcp/types';
+import type { ToolParameter } from '../../../desktop-app/shared/types/agentPrompt';
 
 // Ścieżka do głównego katalogu projektu
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');

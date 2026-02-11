@@ -8,7 +8,7 @@ import { EventEmitter } from 'events';
 import { getRedisConnection } from '../config/redis';
 import { AgentTestHarness, summarizeResults } from '../../agent-evals/harness/test-harness';
 import { getResultsStore } from './results-store';
-import { initializeElectronEnvWithPath } from '../../../electron/utils/electronEnv';
+import { initializeElectronEnvWithPath } from '../../../desktop-app/electron/utils/electronEnv';
 import type { TestScenario, TestResult, ToolCall, RawMessage, SystemPromptConfig, TransAgentPromptConfig, SubagentPromptConfig } from '../../agent-evals/types/scenario';
 
 // ============================================================================

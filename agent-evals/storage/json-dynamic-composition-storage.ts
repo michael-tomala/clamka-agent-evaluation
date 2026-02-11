@@ -5,13 +5,13 @@
  * Używana przez testing API zamiast SqliteDynamicCompositionStorage.
  */
 
-import type { IDynamicCompositionStorage } from '../../../shared/storage';
+import type { IDynamicCompositionStorage } from '../../../desktop-app/shared/storage';
 import type {
   DynamicComposition,
   UpdateDynamicCompositionInput,
   DynamicCompositionCompilationStatus,
   SettingsSchema,
-} from '../../../shared/types';
+} from '../../../desktop-app/shared/types';
 
 export class JsonDynamicCompositionStorage implements IDynamicCompositionStorage {
   private compositions = new Map<string, DynamicComposition>();

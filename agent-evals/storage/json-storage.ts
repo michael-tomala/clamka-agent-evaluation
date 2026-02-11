@@ -18,7 +18,7 @@ import type {
   ISettingsStorage,
   IPersonStorage,
   IDynamicCompositionStorage,
-} from '../../../shared/storage';
+} from '../../../desktop-app/shared/storage';
 import { JsonChatStorage } from './json-chat-storage';
 import { JsonEnrichmentStorage } from './json-enrichment-storage';
 import { JsonSettingsStorage } from './json-settings-storage';
@@ -36,7 +36,7 @@ import type {
   UpdateBlockInput,
   MediaAsset,
   CreateMediaAssetInput,
-} from '../../../shared/types';
+} from '../../../desktop-app/shared/types';
 import type { FixtureSet, DataDiff } from '../types/scenario';
 
 // ============================================================================
@@ -1285,6 +1285,19 @@ class JsonMediaAssetStorage implements IMediaAssetStorage {
     }
     this.mediaAssets.delete(id);
     return { success: true };
+  }
+
+  softDelete(id: string): void {
+    const asset = this.mediaAssets.get(id);
+    if (asset) {
+      // Ustaw flagi soft-delete
+      (asset as any).isDeleted = true;
+      (asset as any).deletedAt = new Date().toISOString();
+    }
+  }
+
+  hardDelete(id: string): void {
+    this.mediaAssets.delete(id);
   }
 
   getMetadataField<T>(assetId: string, fieldName: string): T | null {

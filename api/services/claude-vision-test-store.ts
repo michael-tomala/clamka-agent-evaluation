@@ -12,7 +12,7 @@ import fsPromises from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 import type { ClaudeVisionTestResponse } from './claude-vision-test-service';
 import type { ClaudeVisionTestRequest } from './claude-vision-test-service';
-import { SceneDescription } from '../../../shared/types';
+import { SceneDescription } from '../../../desktop-app/shared/types';
 
 // ============================================================================
 // TYPES

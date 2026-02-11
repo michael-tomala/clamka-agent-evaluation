@@ -13,16 +13,16 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter } from 'events';
-import { initializeElectronEnvWithPath } from '../../../electron/utils/electronEnv';
+import { initializeElectronEnvWithPath } from '../../../desktop-app/electron/utils/electronEnv';
 import { loadFixturesFromSqlite, type SqliteFixtureData } from './sqlite-fixture-loader';
 import { getResultsStore } from './results-store';
 import { JsonStorage } from '../../agent-evals/storage/json-storage';
-import { storageRegistry } from '../../../shared/storage';
-import type { Block, MediaAsset, Project, Chapter, Timeline, ProjectExportConfig } from '../../../shared/types';
-import type { ChapterProgressCallback } from '../../../electron/services/RemotionExportService';
+import { storageRegistry } from '../../../desktop-app/shared/storage';
+import type { Block, MediaAsset, Project, Chapter, Timeline, ProjectExportConfig } from '../../../desktop-app/shared/types';
+import type { ChapterProgressCallback } from '../../../desktop-app/electron/services/RemotionExportService';
 
 // Inicjalizuj ścieżkę root projektu - wymagane przed importem RemotionExportService
-const PROJECT_ROOT = path.resolve(__dirname, '../../..');
+const PROJECT_ROOT = path.resolve(__dirname, '../../../desktop-app');
 initializeElectronEnvWithPath(PROJECT_ROOT);
 
 // ============================================================================
@@ -276,7 +276,7 @@ class RenderService extends EventEmitter {
       this.emit('render:start', { jobId });
 
       // Dynamiczny import - remotionExportService wymaga zainicjalizowanego electronEnv
-      const { remotionExportService } = await import('../../../electron/services/RemotionExportService');
+      const { remotionExportService } = await import('../../../desktop-app/electron/services/RemotionExportService');
 
       await remotionExportService.exportChapter(
         chapter,

@@ -6,12 +6,12 @@
  */
 
 import { v4 as uuid } from 'uuid';
-import type { IPersonStorage } from '../../../shared/storage';
+import type { IPersonStorage } from '../../../desktop-app/shared/storage';
 import type {
   MediaAssetPerson,
   CreateMediaAssetPersonInput,
   UpdateMediaAssetPersonInput,
-} from '../../../shared/types';
+} from '../../../desktop-app/shared/types';
 
 export class JsonPersonStorage implements IPersonStorage {
   private persons = new Map<string, MediaAssetPerson>();

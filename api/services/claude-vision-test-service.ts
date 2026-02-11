@@ -9,11 +9,11 @@ import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
-import { FFmpegCliService, VideoMetadata } from '../../../electron/services/cli/FFmpegCliService';
-import { ClaudeCodeCLIService } from '../../../electron/services/cli/ClaudeCodeCLIService';
-import { promptLoaderService } from '../../../electron/services/base/PromptLoaderService';
-import { SceneDescription, SceneActionTuple, SceneActionWithSourceFrames } from '../../../shared/types';
-import { convertSpriteActionsToSourceFrames } from '../../../shared/types/sprite';
+import { FFmpegCliService, VideoMetadata } from '../../../desktop-app/electron/services/cli/FFmpegCliService';
+import { ClaudeCodeCLIService } from '../../../desktop-app/electron/services/cli/ClaudeCodeCLIService';
+import { promptLoaderService } from '../../../desktop-app/electron/services/base/PromptLoaderService';
+import { SceneDescription, SceneActionTuple, SceneActionWithSourceFrames } from '../../../desktop-app/shared/types';
+import { convertSpriteActionsToSourceFrames } from '../../../desktop-app/shared/types/sprite';
 
 // ============================================================================
 // TYPES

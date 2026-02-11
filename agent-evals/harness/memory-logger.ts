@@ -5,7 +5,7 @@
  * Używana w testach do zbierania i analizy logów agenta.
  */
 
-import type { IAgentLogger } from '../../../shared/types/logger';
+import type { IAgentLogger } from '../../../desktop-app/shared/types/logger';
 
 /**
  * Wpis loga

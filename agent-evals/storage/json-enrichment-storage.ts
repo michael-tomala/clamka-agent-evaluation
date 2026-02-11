@@ -6,7 +6,7 @@
  */
 
 import { v4 as uuid } from 'uuid';
-import type { IEnrichmentStorage } from '../../../shared/storage';
+import type { IEnrichmentStorage } from '../../../desktop-app/shared/storage';
 import type {
   MediaAssetFocusPoint,
   CreateMediaAssetFocusPointInput,
@@ -20,7 +20,7 @@ import type {
   MediaAssetScene,
   CreateMediaAssetSceneInput,
   SceneDescription,
-} from '../../../shared/types';
+} from '../../../desktop-app/shared/types';
 
 export class JsonEnrichmentStorage implements IEnrichmentStorage {
   private focusPoints = new Map<string, MediaAssetFocusPoint>();

@@ -12,7 +12,7 @@ import type {
   ProjectContextSearchResult,
   TranscriptionSearchResult,
   TranscriptionSearchOptions
-} from '../../../electron/services/vector/IVectorStoreReader';
+} from '../../../desktop-app/electron/services/vector/IVectorStoreReader';
 
 const TABLE_NAME = 'scene_embeddings';
 const PROJECT_CONTEXTS_TABLE_NAME = 'project_contexts';

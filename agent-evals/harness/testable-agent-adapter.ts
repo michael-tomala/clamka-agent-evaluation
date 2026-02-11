@@ -13,19 +13,19 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { MontageAgentService } from '../../../electron/services/agents/MontageAgentService';
-import { ScriptAgentService } from '../../../electron/services/agents/ScriptAgentService';
-import type { CancelToken } from '../../../electron/services/agents/BaseAgentService';
-import { storageRegistry } from '../../../shared/storage';
-import { promptLoaderService } from '../../../electron/services/base/PromptLoaderService';
-import { agentPromptService } from '../../../electron/services/base/AgentPromptService';
+import { MontageAgentService } from '../../../desktop-app/electron/services/agents/MontageAgentService';
+import { ScriptAgentService } from '../../../desktop-app/electron/services/agents/ScriptAgentService';
+import type { CancelToken } from '../../../desktop-app/electron/services/agents/BaseAgentService';
+import { storageRegistry } from '../../../desktop-app/shared/storage';
+import { promptLoaderService } from '../../../desktop-app/electron/services/base/PromptLoaderService';
+import { agentPromptService } from '../../../desktop-app/electron/services/base/AgentPromptService';
 import { JsonStorage } from '../storage/json-storage';
 import { ToolTracker } from './tool-tracker';
 import { getToolDefinitionsForAgent } from './tool-definitions-provider';
 import { MemoryLogger, type LogEntry } from './memory-logger';
 import type { ITestableAgent } from './test-harness';
-import type { ChatMessage, Project, Chapter } from '../../../shared/types';
-import type { ToolWrapper, TransAgentPromptConfig } from '../../../electron/services/mcp/types';
+import type { ChatMessage, Project, Chapter } from '../../../desktop-app/shared/types';
+import type { ToolWrapper, TransAgentPromptConfig } from '../../../desktop-app/electron/services/mcp/types';
 import type { SystemPromptConfig, RawMessage, ContentBlock, ScenarioInputContext, SubagentPromptConfig } from '../types/scenario';
 
 export type AgentType = 'montage' | 'script';
@@ -294,7 +294,7 @@ export class TestableAgentAdapter implements ITestableAgent {
     // Jeśli podano disabledTools, pobierz wszystkie dozwolone dla agenta i odejmij wyłączone
     if (disabledTools && disabledTools.length > 0) {
       // Import dynamiczny żeby uniknąć circular dependency
-      const { MONTAGE_ALLOWED_TOOLS, SCRIPT_ALLOWED_TOOLS, isSdkBuiltinTool } = require('../../../shared/prompts/agents/allowed-tools');
+      const { MONTAGE_ALLOWED_TOOLS, SCRIPT_ALLOWED_TOOLS, isSdkBuiltinTool } = require('../../../desktop-app/shared/prompts/agents/allowed-tools');
       const allTools = this.agentType === 'montage' ? MONTAGE_ALLOWED_TOOLS : SCRIPT_ALLOWED_TOOLS;
 
       // Wyciąg nazwy - obsłuż zarówno MCP (z prefiksem) jak i SDK (bez prefiksu)

@@ -2,7 +2,7 @@
  * Test Scenario Types - definicje scenariuszy testowych dla agentów
  */
 
-import type { ContextRef } from '../../../shared/types';
+import type { ContextRef } from '../../../desktop-app/shared/types';
 
 // ============================================================================
 // FIXTURES

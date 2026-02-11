@@ -6,7 +6,7 @@
  */
 
 import { v4 as uuid } from 'uuid';
-import type { IChatStorage } from '../../../shared/storage';
+import type { IChatStorage } from '../../../desktop-app/shared/storage';
 import type {
   ChatThread,
   ChatMessage,
@@ -14,7 +14,7 @@ import type {
   UpdateChatThreadInput,
   CreateChatMessageInput,
   AgentType,
-} from '../../../shared/types';
+} from '../../../desktop-app/shared/types';
 
 export class JsonChatStorage implements IChatStorage {
   private threads = new Map<string, ChatThread>();

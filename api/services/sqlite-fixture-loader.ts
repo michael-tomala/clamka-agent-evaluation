@@ -17,7 +17,7 @@ import type {
   MediaAssetTranscriptionSegment,
   MediaAssetFace,
   MediaAssetScene,
-} from '../../../shared/types';
+} from '../../../desktop-app/shared/types';
 
 // ============================================================================
 // SQLITE ROW TYPES (dla typowania wyników zapytań)

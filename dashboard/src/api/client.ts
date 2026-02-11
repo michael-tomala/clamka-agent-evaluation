@@ -500,6 +500,51 @@ export interface RenderJob {
 }
 
 // ============================================================================
+// COMPOSITION TEST TYPES
+// ============================================================================
+
+export interface CompositionTestFixture {
+  id: string;
+  compositionDefinitionId: string;
+  variantName: string;
+  description: string;
+  props: Record<string, unknown>;
+  width: number;
+  height: number;
+  durationInFrames: number;
+  fps: number;
+  tags: string[];
+}
+
+export interface CompositionRenderJobStatus {
+  jobId: string;
+  fixtureId: string;
+  compositionDefinitionId: string;
+  variantName: string;
+  status: 'pending' | 'rendering' | 'encoding' | 'completed' | 'error';
+  progress: number;
+  outputPath?: string;
+  error?: string;
+  renderDurationMs?: number;
+  startedAt: string;
+  completedAt?: string;
+}
+
+export interface CompositionBatchStatus {
+  batchId: string;
+  status: 'pending' | 'running' | 'completed' | 'error';
+  completedCount: number;
+  totalCount: number;
+}
+
+export interface CompositionRenderedFile {
+  fixtureId: string;
+  filePath: string;
+  sizeBytes: number;
+  engine: 'remotion' | 'puppeteer';
+}
+
+// ============================================================================
 // API CALLS
 // ============================================================================
 
@@ -747,6 +792,40 @@ export const api = {
     fetchJson<{ success: boolean; message: string }>(`/render/${jobId}`, {
       method: 'DELETE',
     }),
+
+  // Composition Tests
+  getCompositionFixtures: () =>
+    fetchJson<CompositionTestFixture[]>('/composition-tests/fixtures'),
+
+  getCompositionFixturesByDefinition: (definitionId: string) =>
+    fetchJson<CompositionTestFixture[]>(`/composition-tests/fixtures/${definitionId}`),
+
+  renderComposition: (fixtureId: string, engine: 'remotion' | 'puppeteer' = 'puppeteer', useBackgroundVideo?: boolean, debug?: boolean) =>
+    fetchJson<{ jobId: string; status: string; message: string }>('/composition-tests/render', {
+      method: 'POST',
+      body: JSON.stringify({ fixtureId, engine, useBackgroundVideo, debug }),
+    }),
+
+  renderCompositionBatch: (definitionId?: string, engine: 'remotion' | 'puppeteer' = 'puppeteer', useBackgroundVideo?: boolean) =>
+    fetchJson<{ batchId: string; status: string; totalCount: number; message: string }>('/composition-tests/render-batch', {
+      method: 'POST',
+      body: JSON.stringify({ definitionId, engine, useBackgroundVideo }),
+    }),
+
+  getCompositionJobStatus: (jobId: string) =>
+    fetchJson<CompositionRenderJobStatus>(`/composition-tests/jobs/${jobId}`),
+
+  getCompositionBatchStatus: (batchId: string) =>
+    fetchJson<CompositionBatchStatus>(`/composition-tests/batch/${batchId}`),
+
+  getCompositionRenders: (engine?: 'remotion' | 'puppeteer') =>
+    fetchJson<CompositionRenderedFile[]>(`/composition-tests/renders${engine ? `?engine=${engine}` : ''}`),
+
+  deleteCompositionRender: (fixtureId: string, engine?: 'remotion' | 'puppeteer') =>
+    fetchJson<{ success: boolean; message: string }>(
+      `/composition-tests/renders/${fixtureId}${engine ? `?engine=${engine}` : ''}`,
+      { method: 'DELETE' }
+    ),
 };
 
 // ============================================================================
