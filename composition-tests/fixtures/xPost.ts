@@ -32,7 +32,7 @@ export const xPostFixtures: CompositionTestFixture[] = [
     variantName: 'Highlight Markers',
     description: 'Post z markerami [mark]...[/mark] i włączonym highlight',
     props: {
-      avatar: 'https://via.placeholder.com/48',
+      avatar: 'https://yt3.ggpht.com/BDgSMBCUlWGPDE290aFysMoCtO2dClwz_ODM_xZX0Lry0aX8ZhpJ3btCuGOR-R_m9NHHeDOs4Bs=s176-c-k-c0x00ffffff-no-rj',
       name: 'Highlight Tester',
       handle: 'highlighter',
       date: 'Jan 10',
@@ -76,7 +76,7 @@ export const xPostFixtures: CompositionTestFixture[] = [
     variantName: '3D Effect',
     description: 'Post z włączonym efektem 3D',
     props: {
-      avatar: 'https://via.placeholder.com/48',
+      avatar: 'https://yt3.ggpht.com/BDgSMBCUlWGPDE290aFysMoCtO2dClwz_ODM_xZX0Lry0aX8ZhpJ3btCuGOR-R_m9NHHeDOs4Bs=s176-c-k-c0x00ffffff-no-rj',
       name: '3D Tester',
       handle: '3dtester',
       date: 'Feb 5',
@@ -120,7 +120,7 @@ export const xPostFixtures: CompositionTestFixture[] = [
     variantName: 'Long Text',
     description: 'Post z bardzo długim tekstem - test overflow',
     props: {
-      avatar: 'https://via.placeholder.com/48',
+      avatar: 'https://yt3.ggpht.com/BDgSMBCUlWGPDE290aFysMoCtO2dClwz_ODM_xZX0Lry0aX8ZhpJ3btCuGOR-R_m9NHHeDOs4Bs=s176-c-k-c0x00ffffff-no-rj',
       name: 'Lorem Ipsum',
       handle: 'loremipsum',
       date: 'Mar 1',

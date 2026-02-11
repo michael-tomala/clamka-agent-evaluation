@@ -545,6 +545,105 @@ export interface CompositionRenderedFile {
 }
 
 // ============================================================================
+// TRANSCRIPTION EVAL TYPES
+// ============================================================================
+
+export type TranscriptionBackend = 'whisper-cpp' | 'openai' | 'elevenlabs';
+
+export interface GroundTruthSegment {
+  id: string;
+  assetId: string;
+  text: string;
+  startMs: number;
+  endMs: number;
+  fileRelativeStartFrame: number;
+  fileRelativeEndFrame: number;
+  orderIndex: number;
+  speakerId?: string | null;
+  createdDate: string;
+  modifiedDate: string;
+}
+
+export interface TranscriptionAssetConfig {
+  id: string;
+  assetId: string;
+  audioFilePath: string;
+  sourceFps: number;
+  language: string;
+  label?: string;
+  createdDate: string;
+}
+
+export interface TranscriptionSegmentOutput {
+  text: string;
+  startMs: number;
+  endMs: number;
+  speakerId?: string | null;
+}
+
+export interface SegmentMatch {
+  groundTruth: GroundTruthSegment;
+  predicted: TranscriptionSegmentOutput | null;
+  startDiffMs: number | null;
+  endDiffMs: number | null;
+  iou: number;
+  textSimilarity: number;
+  matched: boolean;
+}
+
+export interface TranscriptionEvalResult {
+  id: string;
+  evalRunId: string;
+  assetId: string;
+  backend: TranscriptionBackend;
+  language: string;
+  options: Record<string, unknown>;
+  avgStartDiffMs: number;
+  avgEndDiffMs: number;
+  maxStartDiffMs: number;
+  maxEndDiffMs: number;
+  matchPercentage: number;
+  avgIoU: number;
+  totalGroundTruthSegments: number;
+  totalPredictedSegments: number;
+  segmentMatches: SegmentMatch[];
+  predictedSegments: TranscriptionSegmentOutput[];
+  transcriptionDurationMs: number;
+  createdDate: string;
+}
+
+export interface TranscriptionEvalRun {
+  id: string;
+  label?: string;
+  backend: TranscriptionBackend;
+  language: string;
+  assetIds: string[];
+  status: 'pending' | 'running' | 'completed' | 'error';
+  totalAssets: number;
+  completedAssets: number;
+  results: TranscriptionEvalResult[];
+  createdDate: string;
+  completedDate?: string;
+}
+
+export interface TranscriptionEvalJob {
+  jobId: string;
+  evalRunId: string;
+  status: 'pending' | 'running' | 'completed' | 'error';
+  currentAssetId?: string;
+  completedAssets: number;
+  totalAssets: number;
+  error?: string;
+  startedAt: string;
+  completedAt?: string;
+}
+
+export interface BackendStatus {
+  available: boolean;
+  error?: string;
+}
+
+// ============================================================================
 // API CALLS
 // ============================================================================
 
@@ -825,6 +924,103 @@ export const api = {
     fetchJson<{ success: boolean; message: string }>(
       `/composition-tests/renders/${fixtureId}${engine ? `?engine=${engine}` : ''}`,
       { method: 'DELETE' }
+    ),
+
+  // Transcription Evals - Backends
+  getTranscriptionBackends: () =>
+    fetchJson<Record<TranscriptionBackend, BackendStatus>>('/transcription-evals/backends'),
+
+  // Transcription Evals - Asset Configs
+  getTranscriptionAssetConfigs: () =>
+    fetchJson<TranscriptionAssetConfig[]>('/transcription-evals/asset-configs'),
+
+  upsertTranscriptionAssetConfig: (config: {
+    assetId: string; audioFilePath: string; sourceFps?: number; language?: string; label?: string;
+  }) =>
+    fetchJson<TranscriptionAssetConfig>('/transcription-evals/asset-configs', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    }),
+
+  deleteTranscriptionAssetConfig: (assetId: string) =>
+    fetchJson<{ success: boolean }>(`/transcription-evals/asset-configs/${assetId}`, {
+      method: 'DELETE',
+    }),
+
+  // Transcription Evals - Audio
+  getTranscriptionAudioUrl: (assetId: string) =>
+    `${API_BASE}/transcription-evals/audio/${assetId}`,
+
+  // Transcription Evals - Ground Truth
+  getAssetsWithGroundTruth: () =>
+    fetchJson<Array<{ assetId: string; segmentCount: number }>>('/transcription-evals/ground-truth'),
+
+  getGroundTruth: (assetId: string) =>
+    fetchJson<GroundTruthSegment[]>(`/transcription-evals/ground-truth/${assetId}`),
+
+  createGroundTruthSegment: (segment: {
+    assetId: string; text: string; startMs: number; endMs: number; sourceFps: number; orderIndex: number; speakerId?: string;
+  }) =>
+    fetchJson<GroundTruthSegment>('/transcription-evals/ground-truth', {
+      method: 'POST',
+      body: JSON.stringify(segment),
+    }),
+
+  updateGroundTruthSegment: (id: string, update: {
+    text?: string; startMs?: number; endMs?: number; sourceFps?: number; orderIndex?: number; speakerId?: string | null;
+  }) =>
+    fetchJson<GroundTruthSegment>(`/transcription-evals/ground-truth/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(update),
+    }),
+
+  deleteGroundTruthSegment: (id: string) =>
+    fetchJson<{ success: boolean }>(`/transcription-evals/ground-truth/${id}`, {
+      method: 'DELETE',
+    }),
+
+  importGroundTruth: (assetId: string, segments: Array<{
+    assetId: string; text: string; startMs: number; endMs: number; sourceFps: number; orderIndex: number; speakerId?: string;
+  }>) =>
+    fetchJson<{ imported: number; segments: GroundTruthSegment[] }>(
+      `/transcription-evals/ground-truth/${assetId}/import`,
+      { method: 'POST', body: JSON.stringify({ segments }) }
+    ),
+
+  exportGroundTruth: (assetId: string) =>
+    fetchJson<{ assetId: string; segments: GroundTruthSegment[] }>(
+      `/transcription-evals/ground-truth/${assetId}/export`
+    ),
+
+  // Transcription Evals - Run
+  runTranscriptionEval: (params: {
+    assetIds: string[]; backend: TranscriptionBackend; language?: string;
+    options?: Record<string, unknown>; label?: string;
+  }) =>
+    fetchJson<{ jobId: string; evalRunId: string; status: string; totalAssets: number; message: string }>(
+      '/transcription-evals/run',
+      { method: 'POST', body: JSON.stringify(params) }
+    ),
+
+  getTranscriptionEvalJobStatus: (jobId: string) =>
+    fetchJson<TranscriptionEvalJob>(`/transcription-evals/jobs/${jobId}`),
+
+  // Transcription Evals - Results
+  getTranscriptionEvalRuns: (limit?: number) =>
+    fetchJson<TranscriptionEvalRun[]>(`/transcription-evals/runs${limit ? `?limit=${limit}` : ''}`),
+
+  getTranscriptionEvalRun: (runId: string) =>
+    fetchJson<TranscriptionEvalRun>(`/transcription-evals/runs/${runId}`),
+
+  deleteTranscriptionEvalRun: (runId: string) =>
+    fetchJson<{ success: boolean }>(`/transcription-evals/runs/${runId}`, { method: 'DELETE' }),
+
+  getTranscriptionEvalResult: (resultId: string) =>
+    fetchJson<TranscriptionEvalResult>(`/transcription-evals/results/${resultId}`),
+
+  getTranscriptionAssetHistory: (assetId: string, limit?: number) =>
+    fetchJson<TranscriptionEvalResult[]>(
+      `/transcription-evals/history/${assetId}${limit ? `?limit=${limit}` : ''}`
     ),
 };
 

@@ -15,6 +15,7 @@ import fixturesRoutes from './routes/fixtures';
 import claudeVisionRoutes from './routes/claude-vision';
 import renderRoutes from './routes/render';
 import compositionTestsRoutes from './routes/composition-tests';
+import transcriptionEvalsRoutes from './routes/transcription-evals';
 
 const PORT = parseInt(process.env.EVAL_API_PORT || '3100');
 const HOST = process.env.EVAL_API_HOST || '0.0.0.0';
@@ -56,6 +57,7 @@ async function start(): Promise<void> {
   await fastify.register(claudeVisionRoutes, { prefix: '/api' });
   await fastify.register(renderRoutes, { prefix: '/api' });
   await fastify.register(compositionTestsRoutes, { prefix: '/api' });
+  await fastify.register(transcriptionEvalsRoutes, { prefix: '/api' });
 
   // Health check
   fastify.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));

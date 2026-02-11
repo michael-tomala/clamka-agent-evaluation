@@ -32,7 +32,7 @@ export const facebookPostFixtures: CompositionTestFixture[] = [
     variantName: 'No Reactions',
     description: 'Post bez reakcji i paska akcji',
     props: {
-      avatar: 'https://via.placeholder.com/48',
+      avatar: 'https://yt3.ggpht.com/BDgSMBCUlWGPDE290aFysMoCtO2dClwz_ODM_xZX0Lry0aX8ZhpJ3btCuGOR-R_m9NHHeDOs4Bs=s176-c-k-c0x00ffffff-no-rj',
       name: 'Anna Nowak',
       date: '5 min',
       privacyIcon: 'public',
@@ -74,7 +74,7 @@ export const facebookPostFixtures: CompositionTestFixture[] = [
     variantName: 'Friends Privacy',
     description: 'Post z ikoną prywatności "friends" i animacją fade',
     props: {
-      avatar: 'https://via.placeholder.com/48',
+      avatar: 'https://yt3.ggpht.com/BDgSMBCUlWGPDE290aFysMoCtO2dClwz_ODM_xZX0Lry0aX8ZhpJ3btCuGOR-R_m9NHHeDOs4Bs=s176-c-k-c0x00ffffff-no-rj',
       name: 'Marek Wiśniewski',
       date: '1 godz.',
       privacyIcon: 'friends',

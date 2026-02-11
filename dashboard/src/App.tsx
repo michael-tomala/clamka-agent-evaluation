@@ -19,6 +19,7 @@ import {
   Storage as StorageIcon,
   Visibility as VisionIcon,
   Brush as BrushIcon,
+  Mic as MicIcon,
 } from '@mui/icons-material';
 
 import PrepareTests from './pages/PrepareTests';
@@ -29,6 +30,7 @@ import ScenarioDetail from './pages/ScenarioDetail';
 import FixturesPreview from './pages/FixturesPreview';
 import ClaudeVisionScenes from './pages/ClaudeVisionScenes';
 import CompositionTests from './pages/CompositionTests';
+import TranscriptionEvals from './pages/TranscriptionEvals';
 
 const DRAWER_WIDTH = 240;
 
@@ -39,6 +41,7 @@ const navItems = [
   { path: '/fixtures', label: 'Fixtures', icon: <StorageIcon /> },
   { path: '/claude-vision', label: 'Claude Vision', icon: <VisionIcon /> },
   { path: '/composition-tests', label: 'Kompozycje', icon: <BrushIcon /> },
+  { path: '/transcription-evals', label: 'Transkrypcje', icon: <MicIcon /> },
 ];
 
 export default function App() {
@@ -127,6 +130,7 @@ export default function App() {
           <Route path="/fixtures" element={<FixturesPreview />} />
           <Route path="/claude-vision" element={<ClaudeVisionScenes />} />
           <Route path="/composition-tests" element={<CompositionTests />} />
+          <Route path="/transcription-evals" element={<TranscriptionEvals />} />
         </Routes>
       </Box>
     </Box>
