@@ -17,4 +17,6 @@ dist/
 
 # Results (large files - nie pushować do GitHub)
 agent-evals/results/renders/
+agent-evals/results/composition-renders-puppeteer
+agent-evals/results/composition-renders
 agent-evals/results/*.db
