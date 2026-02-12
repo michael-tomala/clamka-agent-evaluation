@@ -16,6 +16,8 @@ import {
   Alert,
   IconButton,
   Chip,
+  ToggleButtonGroup,
+  ToggleButton,
 } from '@mui/material';
 import {
   PlayArrow as RenderIcon,
@@ -25,16 +27,18 @@ import {
 import { api, RenderJob } from '../api/client';
 
 interface RenderChapterSectionProps {
-  suiteId: string;
-  scenarioId: string;
+  suiteId?: string;
+  scenarioId?: string;
   projectId: string;
   chapterId: string;
+  defaultEngine?: 'remotion' | 'puppeteer';
 }
 
-export function RenderChapterSection({ suiteId, scenarioId, projectId, chapterId }: RenderChapterSectionProps) {
+export function RenderChapterSection({ suiteId, scenarioId, projectId, chapterId, defaultEngine = 'remotion' }: RenderChapterSectionProps) {
   const [renderJob, setRenderJob] = useState<RenderJob | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [engine, setEngine] = useState<'remotion' | 'puppeteer'>(defaultEngine);
 
   // Polling interval ref
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -78,7 +82,7 @@ export function RenderChapterSection({ suiteId, scenarioId, projectId, chapterId
     setError(null);
 
     try {
-      const result = await api.renderChapter(suiteId, scenarioId, projectId, chapterId);
+      const result = await api.renderChapter(projectId, chapterId, { suiteId, scenarioId, engine });
       setRenderJob({
         jobId: result.jobId,
         projectId,
@@ -164,16 +168,27 @@ export function RenderChapterSection({ suiteId, scenarioId, projectId, chapterId
         </Alert>
       )}
 
-      {/* No render job - show start button */}
+      {/* No render job - show engine selector + start button */}
       {!renderJob && (
-        <Button
-          variant="contained"
-          startIcon={<RenderIcon />}
-          onClick={handleStartRender}
-          disabled={isStarting}
-        >
-          {isStarting ? 'Uruchamianie...' : 'Renderuj chapter'}
-        </Button>
+        <Stack direction="row" spacing={2} alignItems="center">
+          <ToggleButtonGroup
+            value={engine}
+            exclusive
+            onChange={(_, val) => { if (val) setEngine(val); }}
+            size="small"
+          >
+            <ToggleButton value="remotion">Remotion</ToggleButton>
+            <ToggleButton value="puppeteer">Puppeteer</ToggleButton>
+          </ToggleButtonGroup>
+          <Button
+            variant="contained"
+            startIcon={<RenderIcon />}
+            onClick={handleStartRender}
+            disabled={isStarting}
+          >
+            {isStarting ? 'Uruchamianie...' : 'Renderuj chapter'}
+          </Button>
+        </Stack>
       )}
 
       {/* Render in progress */}

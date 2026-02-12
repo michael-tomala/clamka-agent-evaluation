@@ -28,6 +28,7 @@ import {
   MediaAssetsSection,
   LanceDbSection,
 } from '../components/fixtures';
+import { RenderChapterSection } from '../components';
 
 function ChaptersAccordion({ projectId }: { projectId: string }) {
   const [chapters, setChapters] = useState<FixtureChapter[]>([]);
@@ -79,6 +80,12 @@ function ChaptersAccordion({ projectId }: { projectId: string }) {
               Timelines
             </Typography>
             <TimelinesAccordion chapterId={chapter.id} />
+            <Divider sx={{ my: 2 }} />
+            <RenderChapterSection
+              projectId={projectId}
+              chapterId={chapter.id}
+              defaultEngine="puppeteer"
+            />
           </AccordionDetails>
         </Accordion>
       ))}

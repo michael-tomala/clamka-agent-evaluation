@@ -83,12 +83,14 @@ class RenderService extends EventEmitter {
    * @param scenarioId - ID scenariusza (do załadowania snapshot)
    * @param projectId - ID projektu
    * @param chapterId - ID chaptera do wyrenderowania
+   * @param engine - silnik renderowania: 'remotion' (default) lub 'puppeteer'
    */
   async renderChapter(
-    suiteId: string,
-    scenarioId: string,
+    suiteId: string | null,
+    scenarioId: string | null,
     projectId: string,
-    chapterId: string
+    chapterId: string,
+    engine: 'remotion' | 'puppeteer' = 'remotion'
   ): Promise<RenderJob> {
     const jobId = uuidv4();
 
@@ -105,7 +107,7 @@ class RenderService extends EventEmitter {
     this.jobs.set(jobId, job);
 
     // Renderuj asynchronicznie
-    this.executeRender(jobId, suiteId, scenarioId, projectId, chapterId).catch((error) => {
+    this.executeRender(jobId, suiteId, scenarioId, projectId, chapterId, engine).catch((error) => {
       const currentJob = this.jobs.get(jobId);
       if (currentJob) {
         currentJob.status = 'error';
@@ -148,14 +150,36 @@ class RenderService extends EventEmitter {
   }
 
   /**
+   * Oblicz calkowity czas trwania chaptera w klatkach (max endFrame z blocks).
+   */
+  private calculateDuration(blocks: Block[], fps: number): number {
+    let maxEndFrame = 0;
+    for (const block of blocks) {
+      const offset = block.timelineOffsetInFrames ?? 0;
+      const sourceFps = block.mediaAsset?.metadata?.sourceFps ?? fps;
+      const sourceDuration = block.mediaAsset?.metadata?.sourceDurationInFrames ?? 90;
+      const startFrame = block.fileRelativeStartFrame ?? 0;
+      const endFrame = block.fileRelativeEndFrame ?? sourceDuration;
+      const durationInSourceFps = endFrame - startFrame;
+      const durationInProjectFps = Math.round(durationInSourceFps * fps / sourceFps);
+      const blockEnd = offset + durationInProjectFps;
+      if (blockEnd > maxEndFrame) {
+        maxEndFrame = blockEnd;
+      }
+    }
+    return maxEndFrame;
+  }
+
+  /**
    * Wykonaj renderowanie
    */
   private async executeRender(
     jobId: string,
-    suiteId: string,
-    scenarioId: string,
+    suiteId: string | null,
+    scenarioId: string | null,
     projectId: string,
-    chapterId: string
+    chapterId: string,
+    engine: 'remotion' | 'puppeteer' = 'remotion'
   ): Promise<void> {
     const job = this.jobs.get(jobId);
     if (!job) return;
@@ -169,7 +193,9 @@ class RenderService extends EventEmitter {
     // 2. Pobierz data_diff z evals.db (zmiany wykonane przez agenta)
     console.log('[RenderService] Loading data_diff from evals.db...');
     const resultsStore = getResultsStore();
-    const dataDiff = resultsStore.getScenarioDataDiff(suiteId, scenarioId);
+    const dataDiff = (suiteId && scenarioId)
+      ? resultsStore.getScenarioDataDiff(suiteId, scenarioId)
+      : null;
 
     // 3. Zastosuj diff na fixtures → stan końcowy
     const finalData = this.applyDataDiff(fixtureData, dataDiff);
@@ -271,22 +297,85 @@ class RenderService extends EventEmitter {
       };
 
       // 12. Wykonaj renderowanie
-      console.log('[RenderService] Starting Remotion export...');
       job.status = 'rendering';
       this.emit('render:start', { jobId });
 
-      // Dynamiczny import - remotionExportService wymaga zainicjalizowanego electronEnv
-      const { remotionExportService } = await import('../../../desktop-app/electron/services/RemotionExportService');
+      if (engine === 'puppeteer') {
+        // --- PUPPETEER ENGINE ---
+        console.log('[RenderService] Starting Puppeteer chapter render...');
 
-      await remotionExportService.exportChapter(
-        chapter,
-        timelinesWithSettings,
-        enrichedBlocks,
-        projectWithSettings,
-        exportConfig,
-        outputPath,
-        onProgress
-      );
+        const { puppeteerCompositionRenderer } = await import('../../../desktop-app/electron/services/render-engine/PuppeteerCompositionRenderer');
+
+        // Oblicz duration (max endFrame z bloków)
+        const projectFps = Number(projectWithSettings.projectSettings['project.fps']) || 30;
+        const durationInFrames = this.calculateDuration(enrichedBlocks, projectFps);
+
+        // Przygotuj CompositionProps
+        const compositionProps = {
+          chapterData: {
+            chapter,
+            timelines: timelinesWithSettings,
+            blocks: enrichedBlocks,
+          },
+          projectData: {
+            project: projectWithSettings,
+          },
+          isRendering: true,
+          serverPort: 0, // ustawione przez renderer
+        };
+
+        // Wymiary z project settings
+        const width = Number(projectWithSettings.projectSettings['export.resolution.width']) || 1920;
+        const height = Number(projectWithSettings.projectSettings['export.resolution.height']) || 1080;
+
+        // Asset resolver - uzywa zaladowanych mediaAssets
+        const assetResolver = (assetId: string): string | null => {
+          const asset = mediaAssets.find(a => a.id === assetId);
+          return asset?.filePath ?? null;
+        };
+
+        // Puppeteer progress adapter
+        const puppeteerOnProgress = (progress: number) => {
+          job.progress = progress;
+          if (progress < 80) {
+            job.status = 'rendering';
+          } else {
+            job.status = 'encoding';
+          }
+          this.emit('render:progress', {
+            jobId,
+            progress,
+            status: progress < 80 ? 'rendering' : 'encoding',
+          });
+        };
+
+        await puppeteerCompositionRenderer.renderChapter({
+          compositionProps,
+          width,
+          height,
+          fps: projectFps,
+          durationInFrames,
+          outputPath,
+          assetResolver,
+          onProgress: puppeteerOnProgress,
+        });
+      } else {
+        // --- REMOTION ENGINE (default) ---
+        console.log('[RenderService] Starting Remotion export...');
+
+        // Dynamiczny import - remotionExportService wymaga zainicjalizowanego electronEnv
+        const { remotionExportService } = await import('../../../desktop-app/electron/services/RemotionExportService');
+
+        await remotionExportService.exportChapter(
+          chapter,
+          timelinesWithSettings,
+          enrichedBlocks,
+          projectWithSettings,
+          exportConfig,
+          outputPath,
+          onProgress
+        );
+      }
 
       // 13. Zakończ
       job.status = 'completed';

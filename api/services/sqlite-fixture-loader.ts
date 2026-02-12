@@ -28,6 +28,7 @@ interface SqliteProjectRow {
   name: string;
   createdDate: string;
   lastModified: string;
+  ownerId: string | null;
 }
 
 interface SqliteSettingRow {
@@ -266,6 +267,7 @@ export async function loadFixturesFromSqlite(
       name: project.name,
       createdDate: project.createdDate,
       lastModified: project.lastModified,
+      ownerId: project.ownerId,
       projectSettings: projectSettingsObj,
       settings: projectSettingsObj,
     };

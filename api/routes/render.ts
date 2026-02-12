@@ -16,10 +16,11 @@ import { renderService, RenderJob } from '../services/render-service';
 // ============================================================================
 
 interface RenderChapterBody {
-  suiteId: string;
-  scenarioId: string;
+  suiteId?: string;
+  scenarioId?: string;
   projectId: string;
   chapterId: string;
+  engine?: 'remotion' | 'puppeteer';
 }
 
 interface RenderJobParams {
@@ -53,17 +54,18 @@ export default async function renderRoutes(
   fastify.post<{ Body: RenderChapterBody }>(
     '/render/chapter',
     async (request, reply) => {
-      const { suiteId, scenarioId, projectId, chapterId } = request.body;
+      const { suiteId, scenarioId, projectId, chapterId, engine } = request.body;
 
-      if (!suiteId || !scenarioId || !projectId || !chapterId) {
+      if (!projectId || !chapterId) {
         return reply.status(400).send({
-          error: 'Missing required fields: suiteId, scenarioId, projectId, chapterId',
+          error: 'Missing required fields: projectId, chapterId',
         });
       }
 
       try {
-        console.log(`[RenderRoutes] Starting render for chapter ${chapterId} (suite: ${suiteId}, scenario: ${scenarioId})`);
-        const job = await renderService.renderChapter(suiteId, scenarioId, projectId, chapterId);
+        const renderEngine = engine ?? 'remotion';
+        console.log(`[RenderRoutes] Starting render for chapter ${chapterId} (suite: ${suiteId ?? 'none'}, scenario: ${scenarioId ?? 'none'}, engine: ${renderEngine})`);
+        const job = await renderService.renderChapter(suiteId ?? null, scenarioId ?? null, projectId, chapterId, renderEngine);
 
         return reply.send({
           jobId: job.jobId,

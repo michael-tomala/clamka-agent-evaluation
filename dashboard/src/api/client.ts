@@ -878,10 +878,14 @@ export const api = {
     }),
 
   // Render
-  renderChapter: (suiteId: string, scenarioId: string, projectId: string, chapterId: string) =>
+  renderChapter: (
+    projectId: string,
+    chapterId: string,
+    options?: { suiteId?: string; scenarioId?: string; engine?: 'remotion' | 'puppeteer' }
+  ) =>
     fetchJson<{ jobId: string; status: string; message: string }>('/render/chapter', {
       method: 'POST',
-      body: JSON.stringify({ suiteId, scenarioId, projectId, chapterId }),
+      body: JSON.stringify({ projectId, chapterId, ...options }),
     }),
 
   getRenderStatus: (jobId: string) =>
